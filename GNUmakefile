@@ -95,6 +95,10 @@ ifeq ($(FORCE_C99), ON)
 	CMAKE_OPT += -DCMAKE_C_STANDARD=99
 endif
 
+ifneq ($(CMAKE_TOOLCHAIN_FILE),)
+	CMAKE_OPT += -DCMAKE_TOOLCHAIN_FILE=$(CMAKE_TOOLCHAIN_FILE)
+endif
+
 all: make
 
 $(BUILD_DIR)/Makefile:

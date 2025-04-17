@@ -38,7 +38,7 @@ uint8_t z_random_u8(void) {
     while (getrandom(&ret, sizeof(uint8_t), 0) <= 0) {
         ZP_ASM_NOP;
     }
-#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD)
+#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD) || defined(ZENOH_QNX)
     ret = z_random_u32();
 #endif
 
@@ -51,7 +51,7 @@ uint16_t z_random_u16(void) {
     while (getrandom(&ret, sizeof(uint16_t), 0) <= 0) {
         ZP_ASM_NOP;
     }
-#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD)
+#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD) || defined(ZENOH_QNX)
     ret = z_random_u32();
 #endif
 
@@ -66,6 +66,13 @@ uint32_t z_random_u32(void) {
     }
 #elif defined(ZENOH_MACOS) || defined(ZENOH_BSD)
     ret = arc4random();
+#elif defined(ZENOH_QNX)
+    static __thread unsigned int seed = 0;
+    if (seed == 0) {
+        seed = (unsigned int)time(NULL) ^ (unsigned int)pthread_self();
+    }
+
+    ret = (uint32_t)rand_r(&seed);
 #endif
 
     return ret;
@@ -77,7 +84,7 @@ uint64_t z_random_u64(void) {
     while (getrandom(&ret, sizeof(uint64_t), 0) <= 0) {
         ZP_ASM_NOP;
     }
-#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD)
+#elif defined(ZENOH_MACOS) || defined(ZENOH_BSD) || defined(ZENOH_QNX)
     ret |= z_random_u32();
     ret = ret << 32;
     ret |= z_random_u32();
@@ -93,6 +100,10 @@ void z_random_fill(void *buf, size_t len) {
     }
 #elif defined(ZENOH_MACOS) || defined(ZENOH_BSD)
     arc4random_buf(buf, len);
+#elif defined(ZENOH_QNX)
+    for (size_t i = 0; i < len; i++) {
+        ((uint8_t *)buf)[i] = z_random_u8();
+    }
 #endif
 }
 
