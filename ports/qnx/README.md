@@ -19,18 +19,18 @@ The following steps describe how to compile Zenoh-Pico for QNX:
 
 1. Setup the QNX environment:
 
-```
+```bash
 source ~/qnx710/qnxsdp.sh
 ```
 
 2a. Build for a QNX 7.1.0 x86_64 target:
 
-```
+```bash
 make CMAKE_TOOLCHAIN_FILE=./ports/qnx/qnx-sdp710-x86_64.cmake
 ```
 
 2b. Alternatively build for a QNX 7.1.0 aarch64le target:
 
-```
+```bash
 make CMAKE_TOOLCHAIN_FILE=./ports/qnx/qnx-sdp710-aarch64le.cmake
 ```
