@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-runner-set]
         pico_board: ["pico", "pico_w", "pico2", "pico2_w"]
     steps:
       - uses: actions/checkout@v4

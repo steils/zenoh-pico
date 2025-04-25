@@ -23,8 +23,8 @@ on:
 
 jobs:
   run_tests:
-    name: Run unit tests on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Run unit tests on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
   
   memory_leak_unit_tests:
     name: Memory leak unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
 
   check_format:
     name: Check codebase format with clang-format
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -91,7 +91,7 @@ jobs:
 
   c99_build:
     name: Check c99 compilation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -102,8 +102,8 @@ jobs:
           FORCE_C99=ON CMAKE_GENERATOR=Ninja make
 
   raweth_build:
-    name: Build raweth transport on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Build raweth transport on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -115,7 +115,7 @@ jobs:
 
   zenoh_build:
     name: Build Zenoh from source
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     outputs:
       artifact-name: ${{ steps.main.outputs.artifact-name }}
     steps:
@@ -132,8 +132,8 @@ jobs:
 
   modular_build:
     needs: zenoh_build
-    name: Modular build on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Modular build on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     strategy:
       matrix:
         feature_publication: [1, 0]
@@ -176,7 +176,7 @@ jobs:
 
   unstable_build:
     name: Check compilation with unstable API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -188,7 +188,7 @@ jobs:
 
   no_interest_build:
     name: Check compilation without interests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -200,8 +200,8 @@ jobs:
 
   st_build:
     needs: zenoh_build
-    name: Build and test in single thread on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Build and test in single thread on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -237,7 +237,7 @@ jobs:
   fragment_test:
     needs: zenoh_build
     name: Test multicast and unicast fragmentation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -271,7 +271,7 @@ jobs:
   attachment_test:
     needs: zenoh_build
     name: Test attachments
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -304,7 +304,7 @@ jobs:
   memory_leak_test:
     needs: zenoh_build
     name: Test examples memory leak
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -341,7 +341,7 @@ jobs:
 
   no_router:
     name: Test examples without router
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -356,7 +356,7 @@ jobs:
   connection_restore_test:
     needs: zenoh_build
     name: Connection restore test 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -378,7 +378,7 @@ jobs:
 
   unicast_peer_test:
     name: P2p unicast test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -394,7 +394,7 @@ jobs:
         timeout-minutes: 5
 
   markdown_lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - uses: actions/checkout@v4
       - uses: DavidAnson/markdownlint-cli2-action@v18
@@ -425,7 +425,7 @@ jobs:
   # job to signal whether all CI checks have passed.
   ci:
     name: CI status checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     needs: [run_tests, check_format, c99_build, raweth_build, zenoh_build, modular_build, unstable_build, no_interest_build, st_build, fragment_test, attachment_test, memory_leak_test, no_router, connection_restore_test, markdown_lint, build_shared, build_static, integration, multicast, memory_leak_unit_tests, unicast_peer_test]
     if: always()
     steps:
