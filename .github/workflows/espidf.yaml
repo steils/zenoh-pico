@@ -33,7 +33,7 @@ jobs:
 
       - name: Install requirements
         run: |
-          echo "No requirements need to be installed"
+          sudo apt-get install -y python3.12-venv
 
       - name: Install PlatformIO
         run: |
