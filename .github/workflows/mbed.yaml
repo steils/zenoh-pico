@@ -31,9 +31,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Install pyenv and python3.9 since mbed framework won't work with python3.12
+      # See https://community.platformio.org/t/unable-to-build-for-mbed-fails-to-include-packages-deprecated-in-python-3-12-pls-help/42520/2
       - name: Install requirements
         run: |
-          sudo apt-get install -y python3.12-venv
+          curl https://pyenv.run | bash
+          export PYENV_ROOT="$HOME/.pyenv"
+          [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          eval "$(pyenv init - bash)"
+          pyenv install 3.9
+          pyenv local 3.9
+
+          # Setup pyenv for the next steps
+          echo PYENV_ROOT="$HOME/.pyenv" >> $GITHUB_ENV
+          [[ -d $PYENV_ROOT/bin ]] && echo PATH="$PYENV_ROOT/bin:$PATH" >> $GITHUB_ENV
 
       - name: Install PlatformIO
         run: |
