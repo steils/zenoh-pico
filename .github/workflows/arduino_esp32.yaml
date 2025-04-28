@@ -42,11 +42,14 @@ jobs:
           . $HOME/.platformio/penv/bin/activate
           platformio update
 
+      - name: Set env vars
+        run: |
+          echo "ARDUINO_BASE=${{ github.workspace }}/../../arduino_esp32project" >> $GITHUB_ENV
+          echo "ZENOH_PICO_BASE=${{ github.workspace }}/" >> $GITHUB_ENV
+
       - name: Set up project
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           mkdir -p $ARDUINO_BASE
@@ -61,8 +64,6 @@ jobs:
       - name: Build z_pub example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
@@ -75,8 +76,6 @@ jobs:
       - name: Build z_sub example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
@@ -89,8 +88,6 @@ jobs:
       - name: Build z_pull example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
@@ -103,8 +100,6 @@ jobs:
       - name: Build z_get example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
@@ -117,8 +112,6 @@ jobs:
       - name: Build z_queryable example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
@@ -131,8 +124,6 @@ jobs:
       - name: Build z_scout example
         run: |
           cd $HOME
-          export ARDUINO_BASE=$HOME/work/arduino_esp32project/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ARDUINO_BASE/src/*
