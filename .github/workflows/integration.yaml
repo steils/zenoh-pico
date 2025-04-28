@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-runner-set, macOS-latest]
+        os: [ubuntu-runner-set, [self-hosted, macos-latest]]
 
     steps:
       - name: Clone this repository
