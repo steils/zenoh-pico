@@ -19,11 +19,9 @@ on:
 jobs:
   build:
     name: Build on macOS-latest
-    runs-on: macOS-latest
+    runs-on: [self-hosted, macos-latest]
     strategy:
       fail-fast: false
-      matrix:
-        os: [macOS-latest]
 
     steps:
       - uses: actions/checkout@v4

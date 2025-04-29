@@ -18,33 +18,36 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ join(matrix.os, ', ') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os:
+          - [ubuntu-runner-set]
+          - [self-hosted, macos-latest]
+          - [self-hosted, windows-latest]
     steps:
-    - uses: actions/checkout@v4
-    - name: Compile debug
-      run: make all
-      env:
-        BUILD_TYPE: Debug
-        BUILD_SHARED_LIBS: ON
-        BUILD_TESTING: ON
-        BUILD_MULTICAST: ON
-        BUILD_INTEGRATION: ON
-        BUILD_TOOLS: ON
-        ZENOH_DEBUG: 3
+      - uses: actions/checkout@v4
+      - name: Compile debug
+        run: make all
+        env:
+          BUILD_TYPE: Debug
+          BUILD_SHARED_LIBS: ON
+          BUILD_TESTING: ON
+          BUILD_MULTICAST: ON
+          BUILD_INTEGRATION: ON
+          BUILD_TOOLS: ON
+          ZENOH_LOG: debug
 
   crossbuilds:
-    name: Build on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Build on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     steps:
-    - uses: actions/checkout@v4
-    - name: Crosscompile debug
-      run: make crossbuilds
-      env:
-        BUILD_TYPE: Debug
-        BUILD_SHARED_LIBS: ON
-        ZENOH_DEBUG: 3
+      - uses: actions/checkout@v4
+      - name: Crosscompile debug
+        run: make crossbuilds
+        env:
+          BUILD_TYPE: Debug
+          BUILD_SHARED_LIBS: ON
+          ZENOH_LOG: debug

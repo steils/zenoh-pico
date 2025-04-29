@@ -29,15 +29,24 @@ on:
 
 jobs:
   build-and-test:
-    name: Build and test zenoh-cpp on ${{ matrix.os }}
+    name: Build and test zenoh-cpp on ${{ join(matrix.os, ', ') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os:
+          - [ubuntu-runner-set]
+          - [self-hosted, macos-latest]
+          - [self-hosted, windows-latest]
         unstable: [0, 1]
 
     steps:
+    - name: Set git line endings config for windows
+      if: ${{ contains(matrix.os, 'windows-latest') }}
+      run: |
+        git config --global core.autocrlf false
+        git config --global core.eol lf
+
     - name: checkout zenoh-pico
       uses: actions/checkout@v3
 

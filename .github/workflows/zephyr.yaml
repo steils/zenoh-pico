@@ -26,30 +26,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-runner-set]
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install requirements
         run: |
-          echo "No requirements need to be installed"
+          sudo apt-get install -y python3.12-venv
 
       - name: Install PlatformIO
         run: |
           curl -fsSL -o get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py
           python3 get-platformio.py
 
+      - name: Set env vars
+        run: |
+          echo "ZEPHYR_BASE=${{ github.workspace }}/../../zephyrproject" >> $GITHUB_ENV
+          echo "ZENOH_PICO_BASE=${{ github.workspace }}/" >> $GITHUB_ENV
+
       - name: Set up project
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           mkdir -p $ZEPHYR_BASE
           cd $ZEPHYR_BASE
-          pio init -b nucleo_f767zi --project-option="framework=zephyr" --project-option="board_build.cmake_extra_args=-DZ_FEATURE_LINK_SERIAL=1 -DZENOH_DEBUG=3"
+          pio init -b nucleo_f767zi --project-option="framework=zephyr" --project-option="board_build.cmake_extra_args=-DZ_FEATURE_LINK_SERIAL=1" --project-option="build_flags=-DZENOH_LOG_DEBUG"
 
           cd $ZEPHYR_BASE/lib
           ln -s $ZENOH_PICO_BASE
@@ -62,8 +65,6 @@ jobs:
       - name: Build z_pub example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*
@@ -76,8 +77,6 @@ jobs:
       - name: Build z_sub example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*
@@ -90,8 +89,6 @@ jobs:
       - name: Build z_pull example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*
@@ -104,8 +101,6 @@ jobs:
       - name: Build z_get example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*
@@ -118,8 +113,6 @@ jobs:
       - name: Build z_queryable example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*
@@ -132,8 +125,6 @@ jobs:
       - name: Build z_scout example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $ZEPHYR_BASE/src/*

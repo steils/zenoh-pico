@@ -26,14 +26,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04]
+        os: [ubuntu-runner-set]
 
     steps:
       - uses: actions/checkout@v4
 
+      # Install pyenv and python3.9 since mbed framework won't work with python3.12
+      # See https://community.platformio.org/t/unable-to-build-for-mbed-fails-to-include-packages-deprecated-in-python-3-12-pls-help/42520/2
       - name: Install requirements
         run: |
-          echo "No requirements need to be installed"
+          curl https://pyenv.run | bash
+          export PYENV_ROOT="$HOME/.pyenv"
+          [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
+          eval "$(pyenv init - bash)"
+          pyenv install 3.9
+          pyenv local 3.9
+
+          # Setup pyenv for the next steps
+          echo PYENV_ROOT="$HOME/.pyenv" >> $GITHUB_ENV
+          [[ -d $PYENV_ROOT/bin ]] && echo PATH="$PYENV_ROOT/bin:$PATH" >> $GITHUB_ENV
 
       - name: Install PlatformIO
         run: |
@@ -42,16 +53,19 @@ jobs:
           . $HOME/.platformio/penv/bin/activate
           platformio update
 
+      - name: Set env vars
+        run: |
+          echo "MBED_BASE=${{ github.workspace }}/../../mbedproject" >> $GITHUB_ENV
+          echo "ZENOH_PICO_BASE=${{ github.workspace }}/" >> $GITHUB_ENV
+
       - name: Set up project
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           mkdir -p $MBED_BASE
           cd $MBED_BASE
-          pio init -b nucleo_f767zi --project-option="framework=mbed" --project-option="board_build.cmake_extra_args=-DZ_FEATURE_LINK_SERIAL=1" -O "build_flags=-DZENOH_DEBUG=3 -DZENOH_COMPILER_GCC"
+          pio init -b nucleo_f767zi --project-option="framework=mbed" --project-option="board_build.cmake_extra_args=-DZ_FEATURE_LINK_SERIAL=1" -O "build_flags=-DZENOH_COMPILER_GCC -DZENOH_LOG_DEBUG"
 
           cd $MBED_BASE/lib
           ln -s $ZENOH_PICO_BASE
@@ -61,8 +75,6 @@ jobs:
       - name: Build z_pub example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
@@ -75,8 +87,6 @@ jobs:
       - name: Build z_sub example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
@@ -89,8 +99,6 @@ jobs:
       - name: Build z_pull example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
@@ -103,8 +111,6 @@ jobs:
       - name: Build z_get example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
@@ -117,8 +123,6 @@ jobs:
       - name: Build z_queryable example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
@@ -131,8 +135,6 @@ jobs:
       - name: Build z_scout example
         run: |
           cd $HOME
-          export MBED_BASE=$HOME/work/mbedproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
           . $HOME/.platformio/penv/bin/activate
 
           rm -rf $MBED_BASE/src/*
