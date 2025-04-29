@@ -41,6 +41,12 @@ jobs:
         unstable: [0, 1]
 
     steps:
+    - name: Set git line endings config for windows
+      if: ${{ contains(matrix.os, 'windows-latest') }}
+      run: |
+        git config --global core.autocrlf false
+        git config --global core.eol lf
+
     - name: checkout zenoh-pico
       uses: actions/checkout@v3
 

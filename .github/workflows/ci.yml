@@ -355,8 +355,9 @@ jobs:
   
   connection_restore_test:
     needs: zenoh_build
-    name: Connection restore test 
-    runs-on: ubuntu-runner-set
+    name: Connection restore test
+    # Connection restore test requires iptables which doesn't work well within a k8s pod
+    runs-on: [self-hosted, ubuntu-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -30,6 +30,12 @@ jobs:
 
 
     steps:
+      - name: Set git line endings config for windows
+        if: ${{ contains(matrix.os, 'windows-latest') }}
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Clone this repository
         uses: actions/checkout@v4
 
