@@ -18,12 +18,15 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ join(matrix.os, ', ') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-runner-set, [self-hosted, macos-latest], [self-hosted, windows-latest]]
+        os:
+          - [ubuntu-runner-set]
+          - [self-hosted, macos-latest]
+          - [self-hosted, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Compile debug
