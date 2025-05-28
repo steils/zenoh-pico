@@ -355,12 +355,12 @@ z_result_t _z_n_msg_copy(_z_network_message_t *dst, const _z_network_message_t *
 }
 
 _z_network_message_t *_z_n_msg_clone(const _z_network_message_t *src) {
-    _z_network_message_t *dst = z_malloc(sizeof(_z_network_message_t));
+    _z_network_message_t *dst = (_z_network_message_t *)z_malloc(sizeof(_z_network_message_t));
     _z_n_msg_copy(dst, src);
     return dst;
 }
 
-void _z_msg_fix_mapping(_z_zenoh_message_t *msg, uint16_t mapping) {
+void _z_msg_fix_mapping(_z_zenoh_message_t *msg, uintptr_t mapping) {
     switch (msg->_tag) {
         case _Z_N_DECLARE: {
             _z_decl_fix_mapping(&msg->_body._declare._decl, mapping);

@@ -87,17 +87,17 @@ z_result_t _z_socket_wait_event(void *v_peers, _z_mutex_rec_t *mutex) {
     fd_set read_fds;
     FD_ZERO(&read_fds);
     // Create select mask
-    _z_transport_unicast_peer_list_t **peers = (_z_transport_unicast_peer_list_t **)v_peers;
+    _z_transport_peer_unicast_list_t **peers = (_z_transport_peer_unicast_list_t **)v_peers;
     _z_mutex_rec_lock(mutex);
-    _z_transport_unicast_peer_list_t *curr = *peers;
+    _z_transport_peer_unicast_list_t *curr = *peers;
     int max_fd = 0;
     while (curr != NULL) {
-        _z_transport_unicast_peer_t *peer = _z_transport_unicast_peer_list_head(curr);
+        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_list_head(curr);
         FD_SET(peer->_socket._socket, &read_fds);
         if (peer->_socket._socket > max_fd) {
             max_fd = peer->_socket._socket;
         }
-        curr = _z_transport_unicast_peer_list_tail(curr);
+        curr = _z_transport_peer_unicast_list_tail(curr);
     }
     _z_mutex_rec_unlock(mutex);
     // Wait for events
@@ -111,11 +111,11 @@ z_result_t _z_socket_wait_event(void *v_peers, _z_mutex_rec_t *mutex) {
     _z_mutex_rec_lock(mutex);
     curr = *peers;
     while (curr != NULL) {
-        _z_transport_unicast_peer_t *peer = _z_transport_unicast_peer_list_head(curr);
+        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_list_head(curr);
         if (FD_ISSET(peer->_socket._socket, &read_fds)) {
             peer->_pending = true;
         }
-        curr = _z_transport_unicast_peer_list_tail(curr);
+        curr = _z_transport_peer_unicast_list_tail(curr);
     }
     _z_mutex_rec_unlock(mutex);
     return _Z_RES_OK;
@@ -408,7 +408,7 @@ long unsigned int __get_ip_from_iface(const char *iface, int sa_family, struct s
 
     struct netif *netif = netif_find(iface);
     if (netif != NULL && netif_is_up(netif)) {
-        struct sockaddr_in *lsockaddr_in = z_malloc(sizeof(struct sockaddr_in));
+        struct sockaddr_in *lsockaddr_in = (struct sockaddr_in *)z_malloc(sizeof(struct sockaddr_in));
         if (lsockaddr != NULL) {
             (void)memset(lsockaddr_in, 0, sizeof(struct sockaddr_in));
             const ip4_addr_t *ip4_addr = netif_ip4_addr(netif);
