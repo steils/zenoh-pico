@@ -8,7 +8,9 @@ on:
 jobs:
   check-labels:
     name: Check PR labels
-    uses: eclipse-zenoh/ci/.github/workflows/check-labels.yml@main
+    uses: ZettaScaleLabs/ci/.github/workflows/check-labels.yml@main
+    with:
+      runner: ubuntu-runner-set
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
     permissions:
