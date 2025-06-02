@@ -16,7 +16,7 @@
 TESTBIN="$1"
 TESTDIR=$(dirname "$0")
 
-if [ "$OSTYPE" = "msys" ]; then
+if [ "$OSTYPE" = "msys" ] || [ "$OSTYPE" == "cygwin" ]; then
   TESTBIN="$TESTDIR/Debug/$TESTBIN.exe"
 else
   TESTBIN="./$TESTBIN"
