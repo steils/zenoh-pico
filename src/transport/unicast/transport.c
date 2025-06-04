@@ -81,7 +81,7 @@ static z_result_t _z_unicast_transport_create_inner(_z_transport_unicast_t *ztu,
     // Transport link for unicast
     ztu->_common._link = *zl;
 
-    ztu->_peers = _z_transport_unicast_peer_list_new();
+    ztu->_peers = _z_transport_peer_unicast_list_new();
     return _Z_RES_OK;
 }
 
@@ -205,7 +205,7 @@ static z_result_t _z_unicast_handshake_open(_z_transport_unicast_establish_param
     }
     // THIS LOG STRING USED IN TEST, change with caution
     _Z_DEBUG("Received Z_OPEN(Ack)");
-    param->_lease = oam._body._open._lease;  // The session lease
+    param->_lease = (oam._body._open._lease < Z_TRANSPORT_LEASE) ? oam._body._open._lease : Z_TRANSPORT_LEASE;
     // The initial SN at RX side. Initialize the session as we had already received
     // a message with a SN equal to initial_sn - 1.
     param->_initial_sn_rx = oam._body._open._initial_sn;
@@ -276,7 +276,7 @@ z_result_t _z_unicast_handshake_listen(_z_transport_unicast_establish_param_t *p
     }
     _Z_DEBUG("Received Z_OPEN(Syn)");
     // Process message
-    param->_lease = tmsg._body._open._lease;
+    param->_lease = (tmsg._body._open._lease < Z_TRANSPORT_LEASE) ? tmsg._body._open._lease : Z_TRANSPORT_LEASE;
     param->_initial_sn_rx = tmsg._body._open._initial_sn;
     _z_t_msg_clear(&tmsg);
 
@@ -335,7 +335,7 @@ z_result_t _z_unicast_transport_close(_z_transport_unicast_t *ztu, uint8_t reaso
 
 void _z_unicast_transport_clear(_z_transport_unicast_t *ztu, bool detach_tasks) {
     _z_common_transport_clear(&ztu->_common, detach_tasks);
-    _z_transport_unicast_peer_list_free(&ztu->_peers);
+    _z_transport_peer_unicast_list_free(&ztu->_peers);
 }
 
 #else
