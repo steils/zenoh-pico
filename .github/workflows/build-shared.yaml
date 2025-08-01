@@ -44,6 +44,7 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Uninstall pre-installed packages
+        if: ${{ matrix.os != 'ubuntu-runner-set' }}
         run: sudo apt remove dotnet* azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox temurin-8-jdk powershell mysql-server-core-8.0 mono-devel -y
 
       - uses: actions/checkout@v4
