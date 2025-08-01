@@ -20,8 +20,7 @@
 #include "zenoh-pico.h"
 
 #if Z_FEATURE_SUBSCRIPTION == 1 && Z_FEATURE_PUBLICATION == 1 && Z_FEATURE_QUERY == 1 && Z_FEATURE_QUERYABLE == 1 && \
-    Z_FEATURE_MULTI_THREAD == 1 && Z_FEATURE_LOCAL_SUBSCRIBER == 0 && Z_FEATURE_UNICAST_PEER == 1 &&                 \
-    defined Z_FEATURE_UNSTABLE_API
+    Z_FEATURE_MULTI_THREAD == 1 && Z_FEATURE_LOCAL_SUBSCRIBER == 0 && defined Z_FEATURE_UNSTABLE_API
 typedef struct _node_ctx {
     z_owned_config_t config;
     const char *keyexpr_out;
@@ -122,6 +121,8 @@ void *node_task(void *ptr) {
     }
     // Wait for other nodes to come online
     z_sleep_s(1);
+    // Send a join
+    zp_send_join(z_loan(s), NULL);
     printf("Starting sending data\n");
     // Publish data
     char buf[256];
@@ -194,18 +195,13 @@ static void test_packet_transmission(void) {
     z_config_default(&node_ctx_3.config);
     // Fill config
     zp_config_insert(z_loan_mut(node_ctx_0.config), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(node_ctx_0.config), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:7447");
+    zp_config_insert(z_loan_mut(node_ctx_0.config), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
     zp_config_insert(z_loan_mut(node_ctx_1.config), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(node_ctx_1.config), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:7448");
-    zp_config_insert(z_loan_mut(node_ctx_1.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
+    zp_config_insert(z_loan_mut(node_ctx_1.config), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
     zp_config_insert(z_loan_mut(node_ctx_2.config), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(node_ctx_2.config), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:7449");
-    zp_config_insert(z_loan_mut(node_ctx_2.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-    zp_config_insert(z_loan_mut(node_ctx_2.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7448");
+    zp_config_insert(z_loan_mut(node_ctx_2.config), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
     zp_config_insert(z_loan_mut(node_ctx_3.config), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(node_ctx_3.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-    zp_config_insert(z_loan_mut(node_ctx_3.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7448");
-    zp_config_insert(z_loan_mut(node_ctx_3.config), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7449");
+    zp_config_insert(z_loan_mut(node_ctx_3.config), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
     // Init threads in a staggered manner to let time for sockets to establish
     _z_task_t task0, task1, task2, task3;
     _z_task_init(&task0, NULL, node_task, &node_ctx_0);
@@ -224,76 +220,10 @@ static void test_packet_transmission(void) {
     _z_task_join(&task3);
 }
 
-static bool test_peer_connection(void) {
-    // Init config
-    z_owned_config_t config;
-    z_config_default(&config);
-    zp_config_insert(z_loan_mut(config), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(config), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:7447");
-    // Open main session
-    z_owned_session_t s;
-    if (z_open(&s, z_move(config), NULL) != Z_OK) {
-        printf("Unable to open main session!\n");
-        return false;
-    }
-    if (zp_start_read_task(z_loan_mut(s), NULL) != Z_OK || zp_start_lease_task(z_loan_mut(s), NULL) != Z_OK) {
-        printf("Unable to start read and lease tasks\n");
-        z_session_drop(z_session_move(&s));
-        return NULL;
-    }
-    z_owned_session_t sess_array[Z_LISTEN_MAX_CONNECTION_NB + 1];
-    z_owned_config_t cfg_array[Z_LISTEN_MAX_CONNECTION_NB + 1];
-    // // Open max peers
-    for (int i = 0; i < Z_LISTEN_MAX_CONNECTION_NB; i++) {
-        z_config_default(&cfg_array[i]);
-        zp_config_insert(z_loan_mut(cfg_array[i]), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(cfg_array[i]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-        if (z_open(&sess_array[i], z_move(cfg_array[i]), NULL) != Z_OK) {
-            printf("Unable to open peer session!\n");
-            return false;
-        }
-        z_sleep_ms(100);
-    }
-    // Fail to open a new one
-    z_config_default(&cfg_array[Z_LISTEN_MAX_CONNECTION_NB]);
-    zp_config_insert(z_loan_mut(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-    if (z_open(&sess_array[Z_LISTEN_MAX_CONNECTION_NB], z_move(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), NULL) == Z_OK) {
-        printf("Should not have been able to open this session\n");
-        return false;
-    }
-    // Close first session
-    z_drop(z_move(sess_array[0]));
-    z_sleep_ms(100);
-    // Alternate opening and closing first session a few times
-    for (int i = 0; i < 5; i++) {
-        z_config_default(&cfg_array[0]);
-        zp_config_insert(z_loan_mut(cfg_array[0]), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(cfg_array[0]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-        if (z_open(&sess_array[0], z_move(cfg_array[0]), NULL) != Z_OK) {
-            printf("Unable to open peer session!\n");
-            return false;
-        }
-        z_sleep_ms(100);
-        z_drop(z_move(sess_array[0]));
-        z_sleep_ms(100);
-    }
-    for (size_t i = 0; i < _ZP_ARRAY_SIZE(sess_array); i++) {
-        z_drop(z_move(sess_array[i]));
-    }
-    z_drop(z_move(s));
-    return true;
-}
-
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
     test_packet_transmission();
-    printf("Test connections...");
-    if (!test_peer_connection()) {
-        return -1;
-    }
-    printf(" Ok\n");
     return 0;
 }
 
@@ -304,7 +234,7 @@ int main(int argc, char **argv) {
     (void)argv;
     printf(
         "Missing config token to build this test. This test requires: Z_FEATURE_SUBSCRIPTION, Z_FEATURE_PUBLICATION, "
-        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD, Z_FEATURE_UNICAST_PEER and "
+        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD and "
         "Z_FEATURE_UNSTABLE_API (until querier becomes stable)\n");
     printf("It also requires Z_FEATURE_LOCAL_SUBSCRIBER to be deactivated\n");
     return 0;

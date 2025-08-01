@@ -123,25 +123,24 @@ z_result_t _z_keyexpr_encode(_z_wbuf_t *wbf, bool has_suffix, const _z_keyexpr_t
     return ret;
 }
 
-z_result_t _z_keyexpr_decode(_z_keyexpr_t *ke, _z_zbuf_t *zbf, bool has_suffix) {
+z_result_t _z_keyexpr_decode(_z_keyexpr_t *ke, _z_zbuf_t *zbf, bool has_suffix, bool remote_mapping,
+                             uintptr_t mapping) {
     _Z_DEBUG("Decoding _RESKEY");
     z_result_t ret = _Z_RES_OK;
 
     ret |= _z_zint16_decode(&ke->_id, zbf);
-    if (has_suffix == true) {
+    ke->_mapping = (remote_mapping) ? mapping : _Z_KEYEXPR_MAPPING_LOCAL;
+    if (has_suffix) {
         _z_string_t str = _z_string_null();
         ret |= _z_string_decode(&str, zbf);
         if (ret == _Z_RES_OK) {
             ke->_suffix = str;
-            ke->_mapping = _Z_KEYEXPR_MAPPING_LOCAL;
         } else {
             ke->_suffix = _z_string_null();
-            ke->_mapping = _Z_KEYEXPR_MAPPING_LOCAL;
         }
     } else {
         ke->_suffix = _z_string_null();
     }
-
     return ret;
 }
 
@@ -252,8 +251,6 @@ z_result_t _z_source_info_encode_ext(_z_wbuf_t *wbf, const _z_source_info_t *inf
 
 /*------------------ Push Body Field ------------------*/
 z_result_t _z_push_body_encode(_z_wbuf_t *wbf, const _z_push_body_t *pshb) {
-    (void)(wbf);
-    (void)(pshb);
     uint8_t header = pshb->_is_put ? _Z_MID_Z_PUT : _Z_MID_Z_DEL;
     bool has_source_info = _z_id_check(pshb->_body._put._commons._source_info._source_id.zid) ||
                            pshb->_body._put._commons._source_info._source_sn != 0 ||
@@ -299,7 +296,7 @@ z_result_t _z_push_body_encode(_z_wbuf_t *wbf, const _z_push_body_t *pshb) {
         _Z_RETURN_IF_ERR(_z_bytes_encode(wbf, &pshb->_body._put._payload));
     }
 
-    return 0;
+    return _Z_RES_OK;
 }
 z_result_t _z_push_body_decode_extensions(_z_msg_ext_t *extension, void *ctx) {
     _z_push_body_t *pshb = (_z_push_body_t *)ctx;
@@ -317,7 +314,7 @@ z_result_t _z_push_body_decode_extensions(_z_msg_ext_t *extension, void *ctx) {
             } else {
                 _Z_RETURN_IF_ERR(_z_slice_copy(&s, &extension->_body._zbuf._val));
             }
-            ret = _z_bytes_from_slice(&pshb->_body._put._attachment, s);
+            ret = _z_bytes_from_slice(&pshb->_body._put._attachment, &s);
             break;
         }
         default:
@@ -456,7 +453,7 @@ z_result_t _z_query_decode_extensions(_z_msg_ext_t *extension, void *ctx) {
             } else {
                 _Z_RETURN_IF_ERR(_z_slice_copy(&s, &extension->_body._zbuf._val));
             }
-            ret = _z_bytes_from_slice(&msg->_ext_attachment, s);
+            ret = _z_bytes_from_slice(&msg->_ext_attachment, &s);
             break;
         }
         default:

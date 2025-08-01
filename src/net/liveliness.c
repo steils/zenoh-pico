@@ -35,14 +35,15 @@ z_result_t _z_declare_liveliness_token(const _z_session_rc_t *zn, _z_liveliness_
 
     _z_keyexpr_t ke = _z_keyexpr_duplicate(keyexpr);
     _z_declaration_t declaration = _z_make_decl_token(&ke, id);
-    _z_network_message_t n_msg = _z_n_msg_make_declare(declaration, false, 0);
+    _z_network_message_t n_msg;
+    _z_n_msg_make_declare(&n_msg, declaration, false, 0);
     ret = _z_send_declare(_Z_RC_IN_VAL(zn), &n_msg);
     _z_n_msg_clear(&n_msg);
 
     _z_liveliness_register_token(_Z_RC_IN_VAL(zn), id, keyexpr);
 
     ret_token->_id = id;
-    ret_token->_key = _z_keyexpr_steal(keyexpr);
+    ret_token->_key = _z_keyexpr_steal(&ke);
     ret_token->_zn = _z_session_rc_clone_as_weak(zn);
     return ret;
 }
@@ -57,7 +58,8 @@ z_result_t _z_undeclare_liveliness_token(_z_liveliness_token_t *token) {
     _z_liveliness_unregister_token(_Z_RC_IN_VAL(&token->_zn), token->_id);
 
     _z_declaration_t declaration = _z_make_undecl_token(token->_id, &token->_key);
-    _z_network_message_t n_msg = _z_n_msg_make_declare(declaration, false, 0);
+    _z_network_message_t n_msg;
+    _z_n_msg_make_declare(&n_msg, declaration, false, 0);
     ret = _z_send_undeclare(_Z_RC_IN_VAL(&token->_zn), &n_msg);
     _z_n_msg_clear(&n_msg);
 
@@ -73,6 +75,7 @@ _z_subscriber_t _z_declare_liveliness_subscriber(const _z_session_rc_t *zn, _z_k
     _z_subscription_t s;
     s._id = _z_get_entity_id(_Z_RC_IN_VAL(zn));
     s._key_id = keyexpr->_id;
+    s._declared_key = _z_keyexpr_duplicate(keyexpr);
     s._key = _z_get_expanded_key_from_key(_Z_RC_IN_VAL(zn), keyexpr, NULL);
     s._callback = callback;
     s._dropper = dropper;
@@ -91,7 +94,8 @@ _z_subscriber_t _z_declare_liveliness_subscriber(const _z_session_rc_t *zn, _z_k
     _z_interest_t interest = _z_make_interest(
         keyexpr, s._id, _Z_INTEREST_FLAG_KEYEXPRS | _Z_INTEREST_FLAG_TOKENS | _Z_INTEREST_FLAG_RESTRICTED | mode);
 
-    _z_network_message_t n_msg = _z_n_msg_make_interest(interest);
+    _z_network_message_t n_msg;
+    _z_n_msg_make_interest(&n_msg, interest);
     if (_z_send_declare(_Z_RC_IN_VAL(zn), &n_msg) != _Z_RES_OK) {
         _z_unregister_subscription(_Z_RC_IN_VAL(zn), _Z_SUBSCRIBER_KIND_LIVELINESS_SUBSCRIBER, sp_s);
         _z_subscriber_clear(&ret);
@@ -116,7 +120,8 @@ z_result_t _z_undeclare_liveliness_subscriber(_z_subscriber_t *sub) {
     }
 
     _z_interest_t interest = _z_make_interest_final(s->_val->_id);
-    _z_network_message_t n_msg = _z_n_msg_make_interest(interest);
+    _z_network_message_t n_msg;
+    _z_n_msg_make_interest(&n_msg, interest);
     if (_z_send_undeclare(_Z_RC_IN_VAL(&sub->_zn), &n_msg) != _Z_RES_OK) {
         return _Z_ERR_TRANSPORT_TX_FAILED;
     }
@@ -153,7 +158,8 @@ z_result_t _z_liveliness_query(_z_session_t *zn, const _z_keyexpr_t *keyexpr, _z
                                                       _Z_INTEREST_FLAG_KEYEXPRS | _Z_INTEREST_FLAG_TOKENS |
                                                           _Z_INTEREST_FLAG_RESTRICTED | _Z_INTEREST_FLAG_CURRENT);
 
-            _z_network_message_t n_msg = _z_n_msg_make_interest(interest);
+            _z_network_message_t n_msg;
+            _z_n_msg_make_interest(&n_msg, interest);
             if (_z_send_declare(zn, &n_msg) != _Z_RES_OK) {
                 _z_liveliness_unregister_pending_query(zn, id);
                 ret = _Z_ERR_TRANSPORT_TX_FAILED;

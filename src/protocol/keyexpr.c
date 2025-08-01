@@ -33,6 +33,14 @@ _z_keyexpr_t _z_rid_with_suffix(uint16_t rid, const char *suffix) {
     };
 }
 
+_z_keyexpr_t _z_rid_with_substr_suffix(uint16_t rid, const char *suffix, size_t suffix_len) {
+    return (_z_keyexpr_t){
+        ._id = rid,
+        ._mapping = _Z_KEYEXPR_MAPPING_LOCAL,
+        ._suffix = (suffix == NULL) ? _z_string_null() : _z_string_alias_substr(suffix, suffix_len),
+    };
+}
+
 int _z_keyexpr_compare(_z_keyexpr_t *first, _z_keyexpr_t *second) {
     // Compare ids only if they are valid and originate from the same location
     if ((first->_id != Z_RESOURCE_ID_NONE) && (second->_id != Z_RESOURCE_ID_NONE)) {
@@ -58,20 +66,16 @@ int _z_keyexpr_compare(_z_keyexpr_t *first, _z_keyexpr_t *second) {
     return -1;
 }
 
-_z_keyexpr_t _z_keyexpr_from_string(uint16_t rid, _z_string_t *str) {
-    return (_z_keyexpr_t){
-        ._id = rid,
-        ._mapping = _Z_KEYEXPR_MAPPING_LOCAL,
-        ._suffix = (_z_string_check(str)) ? _z_string_alias(*str) : _z_string_null(),
-    };
+void _z_keyexpr_from_string(_z_keyexpr_t *dst, uint16_t rid, const _z_string_t *str) {
+    dst->_id = rid;
+    dst->_mapping = _Z_KEYEXPR_MAPPING_LOCAL;
+    dst->_suffix = (_z_string_check(str)) ? _z_string_alias(*str) : _z_string_null();
 }
 
-_z_keyexpr_t _z_keyexpr_from_substr(uint16_t rid, const char *str, size_t len) {
-    return (_z_keyexpr_t){
-        ._id = rid,
-        ._mapping = _Z_KEYEXPR_MAPPING_LOCAL,
-        ._suffix = (str != NULL) ? _z_string_alias_substr(str, len) : _z_string_null(),
-    };
+void _z_keyexpr_from_substr(_z_keyexpr_t *dst, uint16_t rid, const char *str, size_t len) {
+    dst->_id = rid;
+    dst->_mapping = _Z_KEYEXPR_MAPPING_LOCAL;
+    dst->_suffix = (str != NULL) ? _z_string_alias_substr(str, len) : _z_string_null();
 }
 
 size_t _z_keyexpr_size(_z_keyexpr_t *p) {
@@ -110,11 +114,6 @@ z_result_t _z_keyexpr_move(_z_keyexpr_t *dst, _z_keyexpr_t *src) {
     return _z_string_move(&dst->_suffix, &src->_suffix);
 }
 
-void _z_keyexpr_clear(_z_keyexpr_t *rk) {
-    rk->_id = Z_RESOURCE_ID_NONE;
-    _z_string_clear(&rk->_suffix);
-}
-
 void _z_keyexpr_free(_z_keyexpr_t **rk) {
     _z_keyexpr_t *ptr = *rk;
 
@@ -144,16 +143,41 @@ bool _z_keyexpr_equals(const _z_keyexpr_t *left, const _z_keyexpr_t *right) {
     return true;
 }
 
-_z_keyexpr_t _z_keyexpr_alias_from_user_defined(_z_keyexpr_t src, bool try_declared) {
-    if ((try_declared && src._id != Z_RESOURCE_ID_NONE) || !_z_keyexpr_has_suffix(&src)) {
-        return (_z_keyexpr_t){
-            ._id = src._id,
-            ._mapping = src._mapping,
-            ._suffix = _z_string_null(),
-        };
+void _z_keyexpr_alias_from_user_defined(_z_keyexpr_t *dst, const _z_keyexpr_t *src) {
+    if ((src->_id != Z_RESOURCE_ID_NONE) || !_z_keyexpr_has_suffix(src)) {
+        dst->_id = src->_id;
+        dst->_mapping = src->_mapping;
+        dst->_suffix = _z_string_null();
     } else {
-        return _z_keyexpr_from_string(Z_RESOURCE_ID_NONE, &src._suffix);
+        _z_keyexpr_from_string(dst, Z_RESOURCE_ID_NONE, &src->_suffix);
     }
+}
+
+z_result_t _z_keyexpr_remove_wilds(_z_keyexpr_t *base_key, char **wild_loc, size_t *wild_suffix_size) {
+    // Check suffix
+    if (!_z_keyexpr_has_suffix(base_key)) {
+        return _Z_RES_OK;
+    }
+    // Search for wilds
+    char *wild = _z_string_pbrk(&base_key->_suffix, "*$");
+    if (wild == NULL) {
+        return _Z_RES_OK;
+    } else if (wild == _z_string_data(&base_key->_suffix)) {
+        return _Z_ERR_INVALID;
+    }
+    // Remove wildcards from suffix
+    wild = _z_ptr_char_offset(wild, -1);
+    *wild_loc = wild;
+    size_t len = _z_ptr_char_diff(wild, _z_string_data(&base_key->_suffix));
+    *wild_suffix_size = _z_string_len(&base_key->_suffix) - len;
+    // Copy non-wild prefix
+    _z_string_t new_suffix = _z_string_preallocate(len);
+    if (!_z_string_check(&new_suffix)) {
+        return _Z_ERR_SYSTEM_OUT_OF_MEMORY;
+    }
+    memcpy((char *)_z_string_data(&new_suffix), _z_string_data(&base_key->_suffix), len);
+    base_key->_suffix = new_suffix;
+    return _Z_RES_OK;
 }
 
 /*------------------ Canonize helpers ------------------*/

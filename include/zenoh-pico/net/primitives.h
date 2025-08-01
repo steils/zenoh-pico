@@ -34,7 +34,7 @@ z_result_t _z_send_declare(_z_session_t *zn, const _z_network_message_t *n_msg);
 z_result_t _z_send_undeclare(_z_session_t *zn, const _z_network_message_t *n_msg);
 
 /*------------------ Discovery ------------------*/
-
+#if Z_FEATURE_SCOUTING == 1
 /**
  * Scout for routers and/or peers.
  *
@@ -46,7 +46,7 @@ z_result_t _z_send_undeclare(_z_session_t *zn, const _z_network_message_t *n_msg
  */
 void _z_scout(const z_what_t what, const _z_id_t zid, _z_string_t *locator, const uint32_t timeout,
               _z_closure_hello_callback_t callback, void *arg_call, _z_drop_handler_t dropper, void *arg_drop);
-
+#endif
 /*------------------ Declarations ------------------*/
 
 /**
@@ -144,10 +144,10 @@ z_result_t _z_undeclare_publisher(_z_publisher_t *pub);
  * Returns:
  *     ``0`` in case of success, ``-1`` in case of failure.
  */
-z_result_t _z_write(_z_session_t *zn, const _z_keyexpr_t keyexpr, _z_bytes_t payload, const _z_encoding_t *encoding,
-                    const z_sample_kind_t kind, const z_congestion_control_t cong_ctrl, z_priority_t priority,
-                    bool is_express, const _z_timestamp_t *timestamp, const _z_bytes_t attachment,
-                    z_reliability_t reliability, const _z_source_info_t *source_info);
+z_result_t _z_write(_z_session_t *zn, const _z_keyexpr_t *keyexpr, const _z_bytes_t *payload,
+                    const _z_encoding_t *encoding, const z_sample_kind_t kind, const z_congestion_control_t cong_ctrl,
+                    z_priority_t priority, bool is_express, const _z_timestamp_t *timestamp,
+                    const _z_bytes_t *attachment, z_reliability_t reliability, const _z_source_info_t *source_info);
 #endif
 
 #if Z_FEATURE_SUBSCRIPTION == 1
@@ -222,11 +222,17 @@ z_result_t _z_undeclare_queryable(_z_queryable_t *qle);
  *     payload: The value of this reply, the caller keeps ownership.
  *     kind: The type of operation.
  *     attachment: An optional attachment to the reply.
+ *     cong_ctrl: The congestion control to apply when routing the reply.
+ *     priority: The priority of the reply.
+ *     is_express: If true, Zenoh will not wait to batch this operation with others to reduce the bandwidth.
+ *     timestamp: The timestamp of this reply. The API level timestamp (e.g. of the data when it was created).
+ *     source_info: The message source info.
  */
 z_result_t _z_send_reply(const _z_query_t *query, const _z_session_rc_t *zsrc, const _z_keyexpr_t *keyexpr,
-                         const _z_value_t payload, const z_sample_kind_t kind, const z_congestion_control_t cong_ctrl,
-                         z_priority_t priority, bool is_express, const _z_timestamp_t *timestamp,
-                         const _z_bytes_t attachment);
+                         const _z_bytes_t *payload, const _z_encoding_t *encoding, const z_sample_kind_t kind,
+                         const z_congestion_control_t cong_ctrl, z_priority_t priority, bool is_express,
+                         const _z_timestamp_t *timestamp, const _z_bytes_t *attachment,
+                         const _z_source_info_t *source_info);
 /**
  * Send a reply error to a query.
  *
@@ -240,7 +246,8 @@ z_result_t _z_send_reply(const _z_query_t *query, const _z_session_rc_t *zsrc, c
  *     key: The resource key of this reply. The caller keeps the ownership.
  *     payload: The value of this reply, the caller keeps ownership.
  */
-z_result_t _z_send_reply_err(const _z_query_t *query, const _z_session_rc_t *zsrc, const _z_value_t payload);
+z_result_t _z_send_reply_err(const _z_query_t *query, const _z_session_rc_t *zsrc, const _z_bytes_t *payload,
+                             const _z_encoding_t *encoding);
 #endif
 
 #if Z_FEATURE_QUERY == 1
@@ -284,6 +291,7 @@ z_result_t _z_undeclare_querier(_z_querier_t *querier);
  *     keyexpr: The resource key to query. The callee gets the ownership of any
  *              allocated value.
  *     parameters: An indication to matching queryables about the queried data.
+ *     parameters_len: Length of the parameters string.
  *     target: The kind of queryables that should be target of this query.
  *     consolidation: The kind of consolidation that should be applied on replies.
  *     value: The payload of the query.
@@ -296,11 +304,11 @@ z_result_t _z_undeclare_querier(_z_querier_t *querier);
  *     priority: The priority of the query.
  *
  */
-z_result_t _z_query(_z_session_t *zn, _z_keyexpr_t keyexpr, const char *parameters, const z_query_target_t target,
-                    const z_consolidation_mode_t consolidation, const _z_value_t value,
-                    _z_closure_reply_callback_t callback, _z_drop_handler_t dropper, void *arg, uint64_t timeout_ms,
-                    const _z_bytes_t attachment, z_congestion_control_t cong_ctrl, z_priority_t priority,
-                    bool is_express);
+z_result_t _z_query(_z_session_t *zn, const _z_keyexpr_t *keyexpr, const char *parameters, size_t parameters_len,
+                    z_query_target_t target, z_consolidation_mode_t consolidation, const _z_bytes_t *payload,
+                    const _z_encoding_t *encoding, _z_closure_reply_callback_t callback, _z_drop_handler_t dropper,
+                    void *arg, uint64_t timeout_ms, const _z_bytes_t *attachment, _z_n_qos_t qos,
+                    z_congestion_control_t cong_ctrl);
 #endif
 
 #if Z_FEATURE_INTEREST == 1

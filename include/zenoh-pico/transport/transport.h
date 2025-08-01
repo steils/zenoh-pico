@@ -41,12 +41,12 @@ enum _z_batching_state_e {
 };
 
 // Forward declaration to avoid cyclical include
-typedef _z_list_t _z_resource_list_t;
+typedef _z_slist_t _z_resource_slist_t;
 
 typedef struct {
     _z_id_t _remote_zid;
     volatile bool _received;
-    _z_resource_list_t *_remote_resources;
+    _z_resource_slist_t *_remote_resources;
 #if Z_FEATURE_FRAGMENTATION == 1
     // Defragmentation buffers
     uint8_t _state_reliable;
@@ -79,7 +79,7 @@ bool _z_transport_peer_multicast_eq(const _z_transport_peer_multicast_t *left,
                                     const _z_transport_peer_multicast_t *right);
 _Z_ELEM_DEFINE(_z_transport_peer_multicast, _z_transport_peer_multicast_t, _z_transport_peer_multicast_size,
                _z_transport_peer_multicast_clear, _z_transport_peer_multicast_copy, _z_noop_move)
-_Z_LIST_DEFINE(_z_transport_peer_multicast, _z_transport_peer_multicast_t)
+_Z_SLIST_DEFINE(_z_transport_peer_multicast, _z_transport_peer_multicast_t, true)
 
 typedef enum _z_unicast_peer_flow_state_e {
     _Z_FLOW_STATE_INACTIVE = 0,
@@ -106,7 +106,7 @@ size_t _z_transport_peer_unicast_size(const _z_transport_peer_unicast_t *src);
 bool _z_transport_peer_unicast_eq(const _z_transport_peer_unicast_t *left, const _z_transport_peer_unicast_t *right);
 _Z_ELEM_DEFINE(_z_transport_peer_unicast, _z_transport_peer_unicast_t, _z_transport_peer_unicast_size,
                _z_transport_peer_unicast_clear, _z_transport_peer_unicast_copy, _z_noop_move)
-_Z_LIST_DEFINE(_z_transport_peer_unicast, _z_transport_peer_unicast_t)
+_Z_SLIST_DEFINE(_z_transport_peer_unicast, _z_transport_peer_unicast_t, true)
 
 // Forward type declaration to avoid cyclical include
 typedef struct _z_session_rc_t _z_session_rc_ref_t;
@@ -123,8 +123,6 @@ typedef struct {
     _z_zint_t _sn_res;
     _z_zint_t _sn_tx_reliable;
     _z_zint_t _sn_tx_best_effort;
-    _z_arc_slice_svec_t _arc_pool;
-    _z_network_message_svec_t _msg_pool;
     volatile _z_zint_t _lease;
     volatile bool _transmitted;
 #if Z_FEATURE_MULTI_THREAD == 1
@@ -152,13 +150,13 @@ typedef z_result_t (*_zp_f_send_tmsg)(_z_transport_common_t *self, const _z_tran
 typedef struct {
     _z_transport_common_t _common;
     // Known valid peers
-    _z_transport_peer_unicast_list_t *_peers;
+    _z_transport_peer_unicast_slist_t *_peers;
 } _z_transport_unicast_t;
 
 typedef struct _z_transport_multicast_t {
     _z_transport_common_t _common;
     // Known valid peers
-    _z_transport_peer_multicast_list_t *_peers;
+    _z_transport_peer_multicast_slist_t *_peers;
     // T message send function
     _zp_f_send_tmsg _send_f;
 } _z_transport_multicast_t;
@@ -172,9 +170,6 @@ typedef struct {
 
     enum { _Z_TRANSPORT_UNICAST_TYPE, _Z_TRANSPORT_MULTICAST_TYPE, _Z_TRANSPORT_RAWETH_TYPE, _Z_TRANSPORT_NONE } _type;
 } _z_transport_t;
-
-_Z_ELEM_DEFINE(_z_transport, _z_transport_t, _z_noop_size, _z_noop_clear, _z_noop_copy, _z_noop_move)
-_Z_LIST_DEFINE(_z_transport, _z_transport_t)
 
 typedef struct {
     _z_id_t _remote_zid;
@@ -207,7 +202,23 @@ void _z_transport_free(_z_transport_t **zt);
 #if Z_FEATURE_BATCHING == 1
 bool _z_transport_start_batching(_z_transport_t *zt);
 void _z_transport_stop_batching(_z_transport_t *zt);
+
+static inline bool _z_transport_batch_hold_tx_mutex(void) {
+#if Z_FEATURE_BATCH_TX_MUTEX == 1
+    return true;
+#else
+    return false;
 #endif
+}
+
+static inline bool _z_transport_batch_hold_peer_mutex(void) {
+#if Z_FEATURE_BATCH_PEER_MUTEX == 1
+    return true;
+#else
+    return false;
+#endif
+}
+#endif  // Z_FEATURE_BATCHING == 1
 
 #if Z_FEATURE_MULTI_THREAD == 1
 static inline z_result_t _z_transport_tx_mutex_lock(_z_transport_common_t *ztc, bool block) {

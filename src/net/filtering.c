@@ -24,14 +24,6 @@
 
 #if Z_FEATURE_INTEREST == 1
 
-void _z_filter_target_elem_free(void **e) {
-    _z_filter_target_t *ptr = (_z_filter_target_t *)*e;
-    if (ptr != NULL) {
-        z_free(ptr);
-        *e = NULL;
-    }
-}
-
 static bool _z_filter_target_peer_eq(const void *left, const void *right) {
     const _z_filter_target_t *left_val = (const _z_filter_target_t *)left;
     const _z_filter_target_t *right_val = (const _z_filter_target_t *)right;
@@ -53,15 +45,9 @@ static void _z_write_filter_mutex_unlock(_z_writer_filter_ctx_t *ctx) { _ZP_UNUS
 #endif
 
 static bool _z_write_filter_push_target(_z_writer_filter_ctx_t *ctx, _z_transport_peer_common_t *peer, uint32_t id) {
-    _z_filter_target_t *target = (_z_filter_target_t *)z_malloc(sizeof(_z_filter_target_t));
-    if (target == NULL) {
-        _Z_ERROR("Failed to allocate filter target.");
-        return false;
-    }
-    target->peer = (uintptr_t)peer;
-    target->decl_id = id;
+    _z_filter_target_t target = {.peer = (uintptr_t)peer, .decl_id = id};
     _z_write_filter_mutex_lock(ctx);
-    ctx->targets = _z_filter_target_list_push(ctx->targets, target);
+    ctx->targets = _z_filter_target_slist_push(ctx->targets, &target);
     _z_write_filter_mutex_unlock(ctx);
     if (ctx->targets == NULL) {  // Allocation can fail
         return false;
@@ -81,40 +67,29 @@ static void _z_write_filter_callback(const _z_interest_msg_t *msg, _z_transport_
         case _Z_INTEREST_MSG_TYPE_UNDECL_QUERYABLE: {
             _z_filter_target_t target = {.decl_id = msg->id, .peer = (uintptr_t)peer};
             _z_write_filter_mutex_lock(ctx);
-            ctx->targets = _z_filter_target_list_drop_filter(ctx->targets, _z_filter_target_eq, &target);
+            ctx->targets = _z_filter_target_slist_drop_filter(ctx->targets, _z_filter_target_eq, &target);
             _z_write_filter_mutex_unlock(ctx);
         } break;
         case _Z_INTEREST_MSG_TYPE_CONNECTION_DROPPED: {
             _z_filter_target_t target = {.decl_id = 0, .peer = (uintptr_t)peer};
             _z_write_filter_mutex_lock(ctx);
-            ctx->targets = _z_filter_target_list_drop_filter(ctx->targets, _z_filter_target_peer_eq, &target);
+            ctx->targets = _z_filter_target_slist_drop_filter(ctx->targets, _z_filter_target_peer_eq, &target);
             _z_write_filter_mutex_unlock(ctx);
         } break;
         default:
             break;
     }
     // Process filter state
-    switch (ctx->state) {
-        default:  // Incorrect values are treated as active
-        case WRITE_FILTER_ACTIVE:
-            // Deactivate filter if no more targets
-            if (ctx->targets != NULL) {
-                ctx->state = WRITE_FILTER_OFF;
-            }
-            break;
-        case WRITE_FILTER_OFF:
-            // Activate filter if no more targets
-            if (ctx->targets == NULL) {
-                ctx->state = WRITE_FILTER_ACTIVE;
-            }
-            break;
-    }
+    ctx->state = (ctx->targets == NULL) ? WRITE_FILTER_ACTIVE : WRITE_FILTER_OFF;
 }
 
 z_result_t _z_write_filter_create(_z_session_t *zn, _z_write_filter_t *filter, _z_keyexpr_t keyexpr,
                                   uint8_t interest_flag) {
-    uint8_t flags = interest_flag | _Z_INTEREST_FLAG_KEYEXPRS | _Z_INTEREST_FLAG_RESTRICTED | _Z_INTEREST_FLAG_CURRENT |
-                    _Z_INTEREST_FLAG_FUTURE | _Z_INTEREST_FLAG_AGGREGATE;
+    uint8_t flags = interest_flag | _Z_INTEREST_FLAG_RESTRICTED | _Z_INTEREST_FLAG_CURRENT;
+    // Add client specific flags
+    if (zn->_mode == Z_WHATAMI_CLIENT) {
+        flags |= _Z_INTEREST_FLAG_KEYEXPRS | _Z_INTEREST_FLAG_AGGREGATE | _Z_INTEREST_FLAG_FUTURE;
+    }
     _z_writer_filter_ctx_t *ctx = (_z_writer_filter_ctx_t *)z_malloc(sizeof(_z_writer_filter_ctx_t));
 
     if (ctx == NULL) {
@@ -124,7 +99,7 @@ z_result_t _z_write_filter_create(_z_session_t *zn, _z_write_filter_t *filter, _
     _Z_RETURN_IF_ERR(_z_mutex_init(&ctx->mutex));
 #endif
     ctx->state = WRITE_FILTER_ACTIVE;
-    ctx->targets = _z_filter_target_list_new();
+    ctx->targets = _z_filter_target_slist_new();
 
     filter->ctx = ctx;
     filter->_interest_id = _z_add_interest(zn, keyexpr, _z_write_filter_callback, flags, (void *)ctx);
@@ -138,7 +113,7 @@ z_result_t _z_write_filter_create(_z_session_t *zn, _z_write_filter_t *filter, _
 z_result_t _z_write_filter_destroy(_z_session_t *zn, _z_write_filter_t *filter) {
     if (filter->ctx != NULL) {
         z_result_t res = _z_remove_interest(zn, filter->_interest_id);
-        _z_filter_target_list_free(&filter->ctx->targets);
+        _z_filter_target_slist_free(&filter->ctx->targets);
 #if Z_FEATURE_MULTI_THREAD == 1
         _z_mutex_drop(&filter->ctx->mutex);
 #endif
@@ -149,11 +124,7 @@ z_result_t _z_write_filter_destroy(_z_session_t *zn, _z_write_filter_t *filter) 
     return _Z_RES_OK;
 }
 
-bool _z_write_filter_active(const _z_write_filter_t *filter) {
-    return filter->ctx != NULL && filter->ctx->state == WRITE_FILTER_ACTIVE;
-}
-
-#else
+#else  // Z_FEATURE_INTEREST == 0
 z_result_t _z_write_filter_create(_z_session_t *zn, _z_write_filter_t *filter, _z_keyexpr_t keyexpr,
                                   uint8_t interest_flag) {
     _ZP_UNUSED(zn);
@@ -167,11 +138,6 @@ z_result_t _z_write_filter_destroy(_z_session_t *zn, _z_write_filter_t *filter) 
     _ZP_UNUSED(zn);
     _ZP_UNUSED(filter);
     return _Z_RES_OK;
-}
-
-bool _z_write_filter_active(const _z_write_filter_t *filter) {
-    _ZP_UNUSED(filter);
-    return false;
 }
 
 #endif
