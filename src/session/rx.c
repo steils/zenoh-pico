@@ -94,6 +94,9 @@ static z_result_t _z_handle_declare(_z_session_t *zn, _z_n_msg_declare_t *decl, 
 
 static z_result_t _z_handle_request(_z_session_rc_t *zsrc, _z_session_t *zn, _z_n_msg_request_t *req,
                                     z_reliability_t reliability, _z_transport_peer_common_t *peer) {
+    _ZP_UNUSED(reliability);
+    _ZP_UNUSED(zsrc);
+    _ZP_UNUSED(peer);
     switch (req->_tag) {
         case _Z_REQUEST_QUERY:
 #if Z_FEATURE_QUERYABLE == 1
@@ -113,7 +116,8 @@ static z_result_t _z_handle_request(_z_session_rc_t *zsrc, _z_session_t *zn, _z_
                                                           &put._commons._timestamp, req->_ext_qos, &put._attachment,
                                                           reliability, &put._commons._source_info, peer));
 #endif
-            _z_network_message_t final = _z_n_msg_make_response_final(req->_rid);
+            _z_network_message_t final;
+            _z_n_msg_make_response_final(&final, req->_rid);
             z_result_t ret = _z_send_n_msg(zn, &final, Z_RELIABILITY_RELIABLE, Z_CONGESTION_CONTROL_BLOCK, NULL);
 #if Z_FEATURE_SUBSCRIPTION == 0
             _z_n_msg_request_clear(req);
@@ -128,7 +132,8 @@ static z_result_t _z_handle_request(_z_session_rc_t *zsrc, _z_session_t *zn, _z_
                                                           &del._attachment, reliability, &del._commons._source_info,
                                                           peer));
 #endif
-            _z_network_message_t final = _z_n_msg_make_response_final(req->_rid);
+            _z_network_message_t final;
+            _z_n_msg_make_response_final(&final, req->_rid);
             z_result_t ret = _z_send_n_msg(zn, &final, Z_RELIABILITY_RELIABLE, Z_CONGESTION_CONTROL_BLOCK, NULL);
 #if Z_FEATURE_SUBSCRIPTION == 0
             _z_n_msg_request_clear(req);
@@ -146,13 +151,14 @@ static z_result_t _z_handle_request(_z_session_rc_t *zsrc, _z_session_t *zn, _z_
 
 static z_result_t _z_handle_response(_z_session_t *zn, _z_n_msg_response_t *resp, _z_transport_peer_common_t *peer) {
 #if Z_FEATURE_QUERY == 1
+    _z_entity_global_id_t replier_id = {.zid = resp->_ext_responder._zid, .eid = resp->_ext_responder._eid};
     switch (resp->_tag) {
         case _Z_RESPONSE_BODY_REPLY:
             // Memory cleaning must be done in the feature layer
-            return _z_trigger_reply_partial(zn, resp->_request_id, &resp->_key, &resp->_body._reply, peer);
+            return _z_trigger_reply_partial(zn, resp->_request_id, &resp->_key, &resp->_body._reply, &replier_id, peer);
         case _Z_RESPONSE_BODY_ERR:
             // Memory cleaning must be done in the feature layer
-            return _z_trigger_reply_err(zn, resp->_request_id, &resp->_body._err);
+            return _z_trigger_reply_err(zn, resp->_request_id, &resp->_body._err, &replier_id);
         default:
             _Z_INFO("Received unknown response tag: %d\n", resp->_tag);
             _z_n_msg_response_clear(resp);
@@ -160,6 +166,8 @@ static z_result_t _z_handle_response(_z_session_t *zn, _z_n_msg_response_t *resp
     }
 #else
     _z_n_msg_response_clear(resp);
+    _ZP_UNUSED(zn);
+    _ZP_UNUSED(peer);
 #endif
     return _Z_RES_OK;
 }
@@ -199,7 +207,7 @@ z_result_t _z_handle_network_message(_z_session_rc_t *zsrc, _z_zenoh_message_t *
             _Z_DEBUG("Handling _Z_N_INTEREST");
             _z_n_msg_interest_t *interest = &msg->_body._interest;
             if ((interest->_interest.flags & _Z_INTEREST_NOT_FINAL_MASK) != 0) {
-                _z_interest_process_interest(zn, interest->_interest._keyexpr, interest->_interest._id,
+                _z_interest_process_interest(zn, &interest->_interest._keyexpr, interest->_interest._id,
                                              interest->_interest.flags);
             } else {
                 _z_interest_process_interest_final(zn, interest->_interest._id);

@@ -21,6 +21,7 @@
 
 #include "zenoh-pico/collections/string.h"
 #include "zenoh-pico/utils/pointers.h"
+#include "zenoh-pico/utils/string.h"
 
 z_result_t _z_config_init(_z_config_t *ps) {
     _z_str_intmap_init(ps);
@@ -30,7 +31,7 @@ z_result_t _z_config_init(_z_config_t *ps) {
 z_result_t _zp_config_insert(_z_config_t *ps, uint8_t key, const char *value) {
     z_result_t ret = _Z_RES_OK;
 
-    char *res = "";
+    const char *res = "";
     if (key == Z_CONFIG_CONNECT_KEY) {
         res = _z_str_intmap_insert_push(ps, key, _z_str_clone(value));
     } else {
@@ -60,11 +61,11 @@ char *_z_config_get(const _z_config_t *ps, uint8_t key) { return _z_str_intmap_g
 z_result_t _z_config_get_all(const _z_config_t *ps, _z_string_svec_t *locators, uint8_t key) {
     _z_list_t *cfg_list = _z_str_intmap_get_all(ps, key);
     while (cfg_list != NULL) {
-        _z_int_void_map_entry_t *entry = (_z_int_void_map_entry_t *)_z_list_head(cfg_list);
+        _z_int_void_map_entry_t *entry = (_z_int_void_map_entry_t *)_z_list_value(cfg_list);
         char *val = (char *)entry->_val;
         _z_string_t s = _z_string_copy_from_str(val);
         _Z_RETURN_IF_ERR(_z_string_svec_append(locators, &s, true));
-        cfg_list = _z_list_tail(cfg_list);
+        cfg_list = _z_list_next(cfg_list);
     }
     return _Z_RES_OK;
 }
@@ -159,15 +160,12 @@ size_t _z_str_intmap_strlen(const _z_str_intmap_t *s, uint8_t argc, _z_str_intma
 void _z_str_intmap_onto_str(char *dst, size_t dst_len, const _z_str_intmap_t *s, uint8_t argc,
                             _z_str_intmapping_t argv[]) {
     size_t len = dst_len;
-    const char lsep = INT_STR_MAP_LIST_SEPARATOR;
-    const char ksep = INT_STR_MAP_KEYVALUE_SEPARATOR;
-
     dst[0] = '\0';
     for (size_t i = 0; i < argc; i++) {
         char *v = _z_str_intmap_get(s, argv[i]._key);
         if (v != NULL) {
             if (len > (size_t)0) {
-                (void)strncat(dst, &lsep, 1);  // List separator
+                _z_str_append(dst, INT_STR_MAP_LIST_SEPARATOR);  // List separator
                 len = len - (size_t)1;
             }
 
@@ -176,7 +174,7 @@ void _z_str_intmap_onto_str(char *dst, size_t dst_len, const _z_str_intmap_t *s,
                 len = len - strlen(argv[i]._str);
             }
             if (len > (size_t)0) {
-                (void)strncat(dst, &ksep, 1);  // KeyValue separator
+                _z_str_append(dst, INT_STR_MAP_KEYVALUE_SEPARATOR);  // KeyValue separator
                 len = len - (size_t)1;
             }
             if (len > (size_t)0) {

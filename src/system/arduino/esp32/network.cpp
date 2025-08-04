@@ -88,17 +88,17 @@ z_result_t _z_socket_wait_event(void *v_peers, _z_mutex_rec_t *mutex) {
     fd_set read_fds;
     FD_ZERO(&read_fds);
     // Create select mask
-    _z_transport_peer_unicast_list_t **peers = (_z_transport_peer_unicast_list_t **)v_peers;
+    _z_transport_peer_unicast_slist_t **peers = (_z_transport_peer_unicast_slist_t **)v_peers;
     _z_mutex_rec_lock(mutex);
-    _z_transport_peer_unicast_list_t *curr = *peers;
+    _z_transport_peer_unicast_slist_t *curr = *peers;
     int max_fd = 0;
     while (curr != NULL) {
-        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_list_head(curr);
+        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_slist_value(curr);
         FD_SET(peer->_socket._fd, &read_fds);
         if (peer->_socket._fd > max_fd) {
             max_fd = peer->_socket._fd;
         }
-        curr = _z_transport_peer_unicast_list_tail(curr);
+        curr = _z_transport_peer_unicast_slist_next(curr);
     }
     _z_mutex_rec_unlock(mutex);
     // Wait for events
@@ -113,11 +113,11 @@ z_result_t _z_socket_wait_event(void *v_peers, _z_mutex_rec_t *mutex) {
     _z_mutex_rec_lock(mutex);
     curr = *peers;
     while (curr != NULL) {
-        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_list_head(curr);
+        _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_slist_value(curr);
         if (FD_ISSET(peer->_socket._fd, &read_fds)) {
             peer->_pending = true;
         }
-        curr = _z_transport_peer_unicast_list_tail(curr);
+        curr = _z_transport_peer_unicast_slist_next(curr);
     }
     _z_mutex_rec_unlock(mutex);
     return _Z_RES_OK;
@@ -885,6 +885,10 @@ void _z_close_serial(_z_sys_net_socket_t *sock) {
 
 size_t _z_read_serial_internal(const _z_sys_net_socket_t sock, uint8_t *header, uint8_t *ptr, size_t len) {
     uint8_t *raw_buf = (uint8_t *)z_malloc(_Z_SERIAL_MAX_COBS_BUF_SIZE);
+    if (raw_buf == NULL) {
+        _Z_ERROR("Failed to allocate serial COBS buffer");
+        return SIZE_MAX;
+    }
     size_t rb = 0;
     for (size_t i = 0; i < _Z_SERIAL_MAX_COBS_BUF_SIZE; i++) {
         while (sock._serial->available() < 1) {
@@ -898,6 +902,10 @@ size_t _z_read_serial_internal(const _z_sys_net_socket_t sock, uint8_t *header, 
     }
 
     uint8_t *tmp_buf = (uint8_t *)z_malloc(_Z_SERIAL_MFS_SIZE);
+    if (tmp_buf == NULL) {
+        _Z_ERROR("Failed to allocate serial MFS buffer");
+        return SIZE_MAX;
+    }
     size_t ret = _z_serial_msg_deserialize(raw_buf, rb, ptr, len, header, tmp_buf, _Z_SERIAL_MFS_SIZE);
 
     z_free(raw_buf);
@@ -909,6 +917,10 @@ size_t _z_read_serial_internal(const _z_sys_net_socket_t sock, uint8_t *header, 
 size_t _z_send_serial_internal(const _z_sys_net_socket_t sock, uint8_t header, const uint8_t *ptr, size_t len) {
     uint8_t *tmp_buf = (uint8_t *)z_malloc(_Z_SERIAL_MFS_SIZE);
     uint8_t *raw_buf = (uint8_t *)z_malloc(_Z_SERIAL_MAX_COBS_BUF_SIZE);
+    if ((raw_buf == NULL) || (tmp_buf == NULL)) {
+        _Z_ERROR("Failed to allocate serial COBS and/or MFS buffer");
+        return SIZE_MAX;
+    }
     size_t ret =
         _z_serial_msg_serialize(raw_buf, _Z_SERIAL_MAX_COBS_BUF_SIZE, ptr, len, header, tmp_buf, _Z_SERIAL_MFS_SIZE);
 

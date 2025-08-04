@@ -186,7 +186,7 @@ _z_slice_t gen_slice(size_t len) {
 _z_bytes_t gen_payload(size_t len) {
     _z_slice_t pld = gen_slice(len);
     _z_bytes_t b;
-    _z_bytes_from_slice(&b, pld);
+    _z_bytes_from_slice(&b, &pld);
 
     return b;
 }
@@ -194,7 +194,7 @@ _z_bytes_t gen_payload(size_t len) {
 _z_bytes_t gen_bytes(size_t len) {
     _z_slice_t s = gen_slice(len);
     _z_bytes_t b;
-    _z_bytes_from_slice(&b, s);
+    _z_bytes_from_slice(&b, &s);
     return b;
 }
 
@@ -737,7 +737,7 @@ void keyexpr_field(void) {
     // Decode
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     _z_keyexpr_t d_rk;
-    res = _z_keyexpr_decode(&d_rk, &zbf, _Z_HAS_FLAG(header, _Z_FLAG_Z_K));
+    res = _z_keyexpr_decode(&d_rk, &zbf, _Z_HAS_FLAG(header, _Z_FLAG_Z_K), false, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -782,7 +782,7 @@ void resource_declaration(void) {
     _z_decl_kexpr_t d_rd;
     uint8_t e_hdr;
     _z_uint8_decode(&e_hdr, &zbf);
-    res = _z_decl_kexpr_decode(&d_rd, &zbf, e_hdr);
+    res = _z_decl_kexpr_decode(&d_rd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -823,7 +823,7 @@ void subscriber_declaration(void) {
     _z_decl_subscriber_t d_sd;
     uint8_t e_hdr;
     _z_uint8_decode(&e_hdr, &zbf);
-    res = _z_decl_subscriber_decode(&d_sd, &zbf, e_hdr);
+    res = _z_decl_subscriber_decode(&d_sd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -872,7 +872,7 @@ void queryable_declaration(void) {
     _z_decl_queryable_t d_qd;
     uint8_t e_hdr = 0;
     _z_uint8_decode(&e_hdr, &zbf);
-    res = _z_decl_queryable_decode(&d_qd, &zbf, e_hdr);
+    res = _z_decl_queryable_decode(&d_qd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -915,7 +915,7 @@ void token_declaration(void) {
     _z_decl_token_t d_qd;
     uint8_t e_hdr = 0;
     _z_uint8_decode(&e_hdr, &zbf);
-    res = _z_decl_token_decode(&d_qd, &zbf, e_hdr);
+    res = _z_decl_token_decode(&d_qd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -1001,7 +1001,7 @@ void forget_subscriber_declaration(void) {
     _z_undecl_subscriber_t d_fsd = {._id = 0, ._ext_keyexpr = {0}};
     uint8_t e_hdr = 0;
     _z_uint8_decode(&e_hdr, &zbf);
-    res = _z_undecl_subscriber_decode(&d_fsd, &zbf, e_hdr);
+    res = _z_undecl_subscriber_decode(&d_fsd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
     printf("   ");
     assert_eq_forget_subscriber_declaration(&e_fsd, &d_fsd);
@@ -1042,7 +1042,7 @@ void forget_queryable_declaration(void) {
     uint8_t e_hdr = 0;
     _z_uint8_decode(&e_hdr, &zbf);
     _z_undecl_queryable_t d_fqd = {._ext_keyexpr = _z_keyexpr_null()};
-    res = _z_undecl_queryable_decode(&d_fqd, &zbf, e_hdr);
+    res = _z_undecl_queryable_decode(&d_fqd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -1084,7 +1084,7 @@ void forget_token_declaration(void) {
     uint8_t e_hdr = 0;
     _z_uint8_decode(&e_hdr, &zbf);
     _z_undecl_token_t d_fqd = {._ext_keyexpr = _z_keyexpr_null()};
-    res = _z_undecl_token_decode(&d_fqd, &zbf, e_hdr);
+    res = _z_undecl_token_decode(&d_fqd, &zbf, e_hdr, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     printf("   ");
@@ -1178,7 +1178,9 @@ _z_network_message_t gen_declare_message(void) {
     _z_declaration_t declaration = gen_declaration();
     bool has_id = gen_bool();
     uint32_t id = gen_uint32();
-    return _z_n_msg_make_declare(declaration, has_id, id);
+    _z_network_message_t n_msg;
+    _z_n_msg_make_declare(&n_msg, declaration, has_id, id);
+    return n_msg;
 }
 
 void assert_eq_declare_message(_z_n_msg_declare_t *left, _z_n_msg_declare_t *right) {
@@ -1207,7 +1209,7 @@ void declare_message(void) {
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     _z_network_message_t d_dcl = {0};
     _z_arc_slice_t arcs = {0};
-    res = _z_network_message_decode(&d_dcl, &zbf, &arcs);
+    res = _z_network_message_decode(&d_dcl, &zbf, &arcs, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(res == _Z_RES_OK);
 
     assert_eq_declare_message(&n_msg._body._declare, &d_dcl._body._declare);
@@ -1258,7 +1260,9 @@ _z_interest_t gen_interest(void) {
 
 _z_network_message_t gen_interest_message(void) {
     _z_interest_t interest = gen_interest();
-    return _z_n_msg_make_interest(interest);
+    _z_network_message_t msg;
+    _z_n_msg_make_interest(&msg, interest);
+    return msg;
 }
 
 void assert_eq_interest(const _z_interest_t *left, const _z_interest_t *right) {
@@ -1282,7 +1286,7 @@ void interest_message(void) {
     _z_n_msg_interest_t decoded = {0};
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     uint8_t header = _z_zbuf_read(&zbf);
-    assert(_z_n_interest_decode(&decoded, &zbf, header) == _Z_RES_OK);
+    assert(_z_n_interest_decode(&decoded, &zbf, header, _Z_KEYEXPR_MAPPING_LOCAL) == _Z_RES_OK);
     // Check
     assert_eq_interest(&expected._body._interest._interest, &decoded._interest);
     // Clean-up
@@ -1474,7 +1478,7 @@ void push_message(void) {
     _z_arc_slice_t arcs = {0};
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     uint8_t header = _z_zbuf_read(&zbf);
-    assert(_Z_RES_OK == _z_push_decode(&decoded, &zbf, header, &arcs));
+    assert(_Z_RES_OK == _z_push_decode(&decoded, &zbf, header, &arcs, _Z_KEYEXPR_MAPPING_LOCAL));
     assert_eq_push(&expected, &decoded);
     _z_n_msg_push_clear(&decoded);
     _z_n_msg_push_clear(&expected);
@@ -1546,7 +1550,7 @@ void request_message(void) {
     _z_arc_slice_t arcs = {0};
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     uint8_t header = _z_zbuf_read(&zbf);
-    z_result_t ret = _z_request_decode(&decoded, &zbf, header, &arcs);
+    z_result_t ret = _z_request_decode(&decoded, &zbf, header, &arcs, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(_Z_RES_OK == ret);
     assert_eq_request(&expected, &decoded);
     _z_n_msg_request_clear(&decoded);
@@ -1605,7 +1609,7 @@ void response_message(void) {
     _z_arc_slice_t arcs = {0};
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
     uint8_t header = _z_zbuf_read(&zbf);
-    z_result_t ret = _z_response_decode(&decoded, &zbf, header, &arcs);
+    z_result_t ret = _z_response_decode(&decoded, &zbf, header, &arcs, _Z_KEYEXPR_MAPPING_LOCAL);
     assert(_Z_RES_OK == ret);
     assert_eq_response(&expected, &decoded);
     _z_n_msg_response_clear(&decoded);
@@ -1834,6 +1838,7 @@ void assert_eq_net_msg(const _z_network_message_t *left, const _z_network_messag
             break;
     }
 }
+
 _z_network_message_svec_t gen_net_msgs(size_t n) {
     _z_network_message_svec_t ret = _z_network_message_svec_make(n);
     for (size_t i = 0; i < n; i++) {
@@ -1843,34 +1848,45 @@ _z_network_message_svec_t gen_net_msgs(size_t n) {
     return ret;
 }
 
-_z_transport_message_t gen_frame(void) {
-    return _z_t_msg_make_frame(gen_uint32(), gen_net_msgs(gen_uint8() % 16), gen_bool());
+_z_transport_message_t gen_frame(_z_wbuf_t *wbf, _z_zbuf_t *zbf, _z_network_message_svec_t *nmsgs) {
+    // Generate payload
+    for (size_t i = 0; i < _z_network_message_svec_len(nmsgs); i++) {
+        _z_network_message_t *msg = _z_network_message_svec_get(nmsgs, i);
+        assert(_z_network_message_encode(wbf, msg) == _Z_RES_OK);
+    }
+    *zbf = _z_wbuf_to_zbuf(wbf);
+    return _z_t_msg_make_frame(gen_uint32(), zbf, gen_bool());
 }
-void assert_eq_frame(const _z_t_msg_frame_t *left, const _z_t_msg_frame_t *right) {
+
+void assert_eq_frame(_z_network_message_svec_t *nmsgs, _z_t_msg_frame_t *left, _z_t_msg_frame_t *right) {
     assert(left->_sn == right->_sn);
-    assert(left->_messages._len == right->_messages._len);
-    for (size_t i = 0; i < left->_messages._len; i++) {
-        assert_eq_net_msg(_z_network_message_svec_get(&left->_messages, i),
-                          _z_network_message_svec_get(&right->_messages, i));
+    for (size_t i = 0; i < _z_network_message_svec_len(nmsgs); i++) {
+        _z_network_message_t *expected = _z_network_message_svec_get(nmsgs, i);
+        _z_network_message_t received = {0};
+        _z_arc_slice_t arcs = _z_arc_slice_empty();
+        assert(_z_network_message_decode(&received, right->_payload, &arcs, _Z_KEYEXPR_MAPPING_LOCAL) == _Z_RES_OK);
+        assert_eq_net_msg(expected, &received);
+        _z_n_msg_clear(&received);
     }
 }
 void frame_message(void) {
     printf("\n>> frame message\n");
     _z_wbuf_t wbf = gen_wbuf(UINT16_MAX);
-    _z_transport_message_t expected = gen_frame();
+    _z_wbuf_t tmp_wbf = gen_wbuf(UINT16_MAX);
+    _z_zbuf_t tmp_zbf = _z_zbuf_null();
+    _z_network_message_svec_t nmsgs = gen_net_msgs(1);
+    _z_transport_message_t expected = gen_frame(&tmp_wbf, &tmp_zbf, &nmsgs);
     assert(_z_frame_encode(&wbf, expected._header, &expected._body._frame) == _Z_RES_OK);
     _z_t_msg_frame_t decoded = {0};
-    _z_arc_slice_svec_t arcs = _z_arc_slice_svec_make(1);
-    _z_network_message_svec_t msg = _z_network_message_svec_make(1);
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
-    z_result_t ret = _z_frame_decode(&decoded, &zbf, expected._header, &arcs, &msg);
-    assert(_Z_RES_OK == ret);
-    assert_eq_frame(&expected._body._frame, &decoded);
-    _z_network_message_svec_clear(&msg);
-    _z_arc_slice_svec_release(&arcs);
+    assert(_z_frame_decode(&decoded, &zbf, expected._header) == _Z_RES_OK);
+    assert_eq_frame(&nmsgs, &expected._body._frame, &decoded);
     _z_t_msg_clear(&expected);
     _z_zbuf_clear(&zbf);
     _z_wbuf_clear(&wbf);
+    _z_wbuf_clear(&tmp_wbf);
+    _z_zbuf_clear(&tmp_zbf);
+    _z_network_message_svec_clear(&nmsgs);
 }
 
 _z_transport_message_t gen_fragment(void) {
@@ -1897,7 +1913,7 @@ void fragment_message(void) {
 }
 
 _z_transport_message_t gen_transport(void) {
-    switch (gen_uint8() % 7) {
+    switch (gen_uint8() % 5) {
         case 0: {
             return gen_join();
         };
@@ -1910,15 +1926,9 @@ _z_transport_message_t gen_transport(void) {
         case 3: {
             return gen_close();
         };
+        default:
         case 4: {
             return gen_keep_alive();
-        };
-        case 5: {
-            return gen_frame();
-        };
-        case 6:
-        default: {
-            return gen_fragment();
         };
     }
 }
@@ -1940,12 +1950,6 @@ void assert_eq_transport(const _z_transport_message_t *left, const _z_transport_
         case _Z_MID_T_KEEP_ALIVE: {
             assert_eq_keep_alive(&left->_body._keep_alive, &right->_body._keep_alive);
         } break;
-        case _Z_MID_T_FRAME: {
-            assert_eq_frame(&left->_body._frame, &right->_body._frame);
-        } break;
-        case _Z_MID_T_FRAGMENT: {
-            assert_eq_fragment(&left->_body._fragment, &right->_body._fragment);
-        } break;
         default:
             assert(false);
     }
@@ -1956,14 +1960,10 @@ void transport_message(void) {
     _z_transport_message_t expected = gen_transport();
     assert(_z_transport_message_encode(&wbf, &expected) == _Z_RES_OK);
     _z_transport_message_t decoded = {0};
-    _z_arc_slice_svec_t arcs = _z_arc_slice_svec_make(1);
-    _z_network_message_svec_t msg = _z_network_message_svec_make(1);
     _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
-    z_result_t ret = _z_transport_message_decode(&decoded, &zbf, &arcs, &msg);
+    z_result_t ret = _z_transport_message_decode(&decoded, &zbf);
     assert(_Z_RES_OK == ret);
     assert_eq_transport(&expected, &decoded);
-    _z_network_message_svec_clear(&msg);
-    _z_arc_slice_svec_release(&arcs);
     _z_t_msg_clear(&expected);
     _z_zbuf_clear(&zbf);
     _z_wbuf_clear(&wbf);

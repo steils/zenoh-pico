@@ -27,7 +27,7 @@
 
 /*------------------ Transmission helper ------------------*/
 
-static bool _z_transport_tx_get_express_status(const _z_network_message_t *msg) {
+static inline bool _z_transport_tx_get_express_status(const _z_network_message_t *msg) {
     switch (msg->_tag) {
         case _Z_N_DECLARE:
             return _Z_HAS_FLAG(msg->_body._declare._ext_qos._val, _Z_N_QOS_IS_EXPRESS_FLAG);
@@ -56,7 +56,7 @@ static _z_zint_t _z_transport_tx_get_sn(_z_transport_common_t *ztc, z_reliabilit
 #if Z_FEATURE_FRAGMENTATION == 1
 static z_result_t _z_transport_tx_send_fragment_inner(_z_transport_common_t *ztc, _z_wbuf_t *frag_buff,
                                                       const _z_network_message_t *n_msg, z_reliability_t reliability,
-                                                      _z_zint_t first_sn, _z_transport_peer_unicast_list_t *peers) {
+                                                      _z_zint_t first_sn, _z_transport_peer_unicast_slist_t *peers) {
     bool is_first = true;
     _z_zint_t sn = first_sn;
     // Encode message on temp buffer
@@ -79,12 +79,12 @@ static z_result_t _z_transport_tx_send_fragment_inner(_z_transport_common_t *ztc
         if (peers == NULL) {
             _Z_RETURN_IF_ERR(_z_link_send_wbuf(&ztc->_link, &ztc->_wbuf, NULL));
         } else {
-            _z_transport_peer_unicast_list_t *curr_list = peers;
+            _z_transport_peer_unicast_slist_t *curr_list = peers;
             while (curr_list != NULL) {
-                _z_transport_peer_unicast_t *curr_peer = _z_transport_peer_unicast_list_head(curr_list);
+                _z_transport_peer_unicast_t *curr_peer = _z_transport_peer_unicast_slist_value(curr_list);
                 // Send on peer socket
                 _z_link_send_wbuf(&ztc->_link, &ztc->_wbuf, &curr_peer->_socket);
-                curr_list = _z_transport_peer_unicast_list_tail(curr_list);
+                curr_list = _z_transport_peer_unicast_slist_next(curr_list);
             }
         }
         ztc->_transmitted = true;  // Tell session we transmitted data
@@ -95,7 +95,7 @@ static z_result_t _z_transport_tx_send_fragment_inner(_z_transport_common_t *ztc
 
 static z_result_t _z_transport_tx_send_fragment(_z_transport_common_t *ztc, const _z_network_message_t *n_msg,
                                                 z_reliability_t reliability, _z_zint_t first_sn,
-                                                _z_transport_peer_unicast_list_t *peers) {
+                                                _z_transport_peer_unicast_slist_t *peers) {
     // Create an expandable wbuf for fragmentation
     _z_wbuf_t frag_buff = _z_wbuf_make(_Z_FRAG_BUFF_BASE_SIZE, true);
     // Send message as fragments
@@ -108,13 +108,12 @@ static z_result_t _z_transport_tx_send_fragment(_z_transport_common_t *ztc, cons
 #else
 static z_result_t _z_transport_tx_send_fragment(_z_transport_common_t *ztc, const _z_network_message_t *n_msg,
                                                 z_reliability_t reliability, _z_zint_t first_sn,
-                                                _z_transport_peer_unicast_list_t *peers) {
+                                                _z_transport_peer_unicast_slist_t *peers) {
     _ZP_UNUSED(ztc);
-    _ZP_UNUSED(fbf);
     _ZP_UNUSED(n_msg);
     _ZP_UNUSED(reliability);
     _ZP_UNUSED(first_sn);
-    _ZP_UNUSED(peers)
+    _ZP_UNUSED(peers);
     _Z_INFO("Sending the message required fragmentation feature that is deactivated.");
     return _Z_RES_OK;
 }
@@ -129,18 +128,18 @@ static inline bool _z_transport_tx_batch_has_data(_z_transport_common_t *ztc) {
 #endif
 }
 
-static z_result_t _z_transport_tx_flush_buffer(_z_transport_common_t *ztc, _z_transport_peer_unicast_list_t *peers) {
+static z_result_t _z_transport_tx_flush_buffer(_z_transport_common_t *ztc, _z_transport_peer_unicast_slist_t *peers) {
     __unsafe_z_finalize_wbuf(&ztc->_wbuf, ztc->_link._cap._flow);
     // Send network message
     if (peers == NULL) {
         _Z_RETURN_IF_ERR(_z_link_send_wbuf(&ztc->_link, &ztc->_wbuf, NULL));
     } else {
-        _z_transport_peer_unicast_list_t *curr_list = peers;
+        _z_transport_peer_unicast_slist_t *curr_list = peers;
         while (curr_list != NULL) {
-            _z_transport_peer_unicast_t *curr_peer = _z_transport_peer_unicast_list_head(curr_list);
+            _z_transport_peer_unicast_t *curr_peer = _z_transport_peer_unicast_slist_value(curr_list);
             // Send on peer socket
             _z_link_send_wbuf(&ztc->_link, &ztc->_wbuf, &curr_peer->_socket);
-            curr_list = _z_transport_peer_unicast_list_tail(curr_list);
+            curr_list = _z_transport_peer_unicast_slist_next(curr_list);
         }
     }
     ztc->_transmitted = true;  // Tell session we transmitted data
@@ -151,7 +150,7 @@ static z_result_t _z_transport_tx_flush_buffer(_z_transport_common_t *ztc, _z_tr
 }
 
 static z_result_t _z_transport_tx_flush_or_incr_batch(_z_transport_common_t *ztc,
-                                                      _z_transport_peer_unicast_list_t *peers) {
+                                                      _z_transport_peer_unicast_slist_t *peers) {
 #if Z_FEATURE_BATCHING == 1
     if (ztc->_batch_state == _Z_BATCHING_ACTIVE) {
         // Increment batch count
@@ -167,7 +166,7 @@ static z_result_t _z_transport_tx_flush_or_incr_batch(_z_transport_common_t *ztc
 
 static z_result_t _z_transport_tx_batch_overflow(_z_transport_common_t *ztc, const _z_network_message_t *n_msg,
                                                  z_reliability_t reliability, _z_zint_t sn, size_t prev_wpos,
-                                                 _z_transport_peer_unicast_list_t *peers) {
+                                                 _z_transport_peer_unicast_slist_t *peers) {
 #if Z_FEATURE_BATCHING == 1
     // Remove partially encoded data
     _z_wbuf_set_wpos(&ztc->_wbuf, prev_wpos);
@@ -179,13 +178,12 @@ static z_result_t _z_transport_tx_batch_overflow(_z_transport_common_t *ztc, con
     _z_transport_message_t t_msg = _z_t_msg_make_frame_header(sn, reliability);
     _Z_RETURN_IF_ERR(_z_transport_message_encode(&ztc->_wbuf, &t_msg));
     // Retry encode
-    bool is_express = _z_transport_tx_get_express_status(n_msg);
     z_result_t ret = _z_network_message_encode(&ztc->_wbuf, n_msg);
     if (ret != _Z_RES_OK) {
         // Message still doesn't fit in buffer, send as fragments
         return _z_transport_tx_send_fragment(ztc, n_msg, reliability, sn, peers);
     } else {
-        if (is_express) {
+        if (_z_transport_tx_get_express_status(n_msg)) {
             // Send immediately
             return _z_transport_tx_flush_buffer(ztc, peers);
         } else {
@@ -205,7 +203,7 @@ static z_result_t _z_transport_tx_batch_overflow(_z_transport_common_t *ztc, con
 #endif
 }
 
-static size_t _z_transport_tx_save_wpos(_z_wbuf_t *wbuf) {
+static inline size_t _z_transport_tx_save_wpos(_z_wbuf_t *wbuf) {
 #if Z_FEATURE_BATCHING == 1
     return _z_wbuf_get_wpos(wbuf);
 #else
@@ -216,7 +214,7 @@ static size_t _z_transport_tx_save_wpos(_z_wbuf_t *wbuf) {
 
 static z_result_t _z_transport_tx_send_n_msg_inner(_z_transport_common_t *ztc, const _z_network_message_t *n_msg,
                                                    z_reliability_t reliability,
-                                                   _z_transport_peer_unicast_list_t *peers) {
+                                                   _z_transport_peer_unicast_slist_t *peers) {
     // Init buffer
     _z_zint_t sn = 0;
     bool batch_has_data = _z_transport_tx_batch_has_data(ztc);
@@ -228,10 +226,9 @@ static z_result_t _z_transport_tx_send_n_msg_inner(_z_transport_common_t *ztc, c
     }
     // Try encoding the network message
     size_t prev_wpos = _z_transport_tx_save_wpos(&ztc->_wbuf);
-    bool is_express = _z_transport_tx_get_express_status(n_msg);
     z_result_t ret = _z_network_message_encode(&ztc->_wbuf, n_msg);
     if (ret == _Z_RES_OK) {
-        if (is_express) {
+        if (_z_transport_tx_get_express_status(n_msg)) {
             // Send immediately
             return _z_transport_tx_flush_buffer(ztc, peers);
         } else {
@@ -248,7 +245,7 @@ static z_result_t _z_transport_tx_send_n_msg_inner(_z_transport_common_t *ztc, c
 }
 
 static z_result_t _z_transport_tx_send_t_msg_inner(_z_transport_common_t *ztc, const _z_transport_message_t *t_msg,
-                                                   _z_transport_peer_unicast_list_t *peers) {
+                                                   _z_transport_peer_unicast_slist_t *peers) {
     // Send batch if needed
     bool batch_has_data = _z_transport_tx_batch_has_data(ztc);
     if (batch_has_data) {
@@ -262,7 +259,7 @@ static z_result_t _z_transport_tx_send_t_msg_inner(_z_transport_common_t *ztc, c
 }
 
 z_result_t _z_transport_tx_send_t_msg(_z_transport_common_t *ztc, const _z_transport_message_t *t_msg,
-                                      _z_transport_peer_unicast_list_t *peers) {
+                                      _z_transport_peer_unicast_slist_t *peers) {
     z_result_t ret = _Z_RES_OK;
     _Z_DEBUG("Send session message");
     // If sending to a peer list, make sure the peer mutex is locked
@@ -280,29 +277,36 @@ z_result_t _z_transport_tx_send_t_msg_wrapper(_z_transport_common_t *ztc, const 
 
 static z_result_t _z_transport_tx_send_n_msg(_z_transport_common_t *ztc, const _z_network_message_t *n_msg,
                                              z_reliability_t reliability, z_congestion_control_t cong_ctrl,
-                                             _z_transport_peer_unicast_list_t *peers) {
+                                             _z_transport_peer_unicast_slist_t *peers) {
     z_result_t ret = _Z_RES_OK;
     _Z_DEBUG("Send network message");
 
     // Acquire the lock and drop the message if needed
-    ret = _z_transport_tx_mutex_lock(ztc, cong_ctrl == Z_CONGESTION_CONTROL_BLOCK);
+    if (!_z_transport_batch_hold_tx_mutex()) {
+        ret = _z_transport_tx_mutex_lock(ztc, cong_ctrl == Z_CONGESTION_CONTROL_BLOCK);
+    }
     if (ret != _Z_RES_OK) {
         _Z_INFO("Dropping zenoh message because of congestion control");
         return ret;
     }
     // Process message
     ret = _z_transport_tx_send_n_msg_inner(ztc, n_msg, reliability, peers);
-    _z_transport_tx_mutex_unlock(ztc);
+    if (!_z_transport_batch_hold_tx_mutex()) {
+        _z_transport_tx_mutex_unlock(ztc);
+    }
     return ret;
 }
 
 static z_result_t _z_transport_tx_send_n_batch(_z_transport_common_t *ztc, z_congestion_control_t cong_ctrl,
-                                               _z_transport_peer_unicast_list_t *peers) {
+                                               _z_transport_peer_unicast_slist_t *peers) {
 #if Z_FEATURE_BATCHING == 1
+    z_result_t ret = _Z_RES_OK;
     // Check batch size
     if (ztc->_batch_count > 0) {
         // Acquire the lock and drop the message if needed
-        z_result_t ret = _z_transport_tx_mutex_lock(ztc, cong_ctrl == Z_CONGESTION_CONTROL_BLOCK);
+        if (!_z_transport_batch_hold_tx_mutex()) {
+            ret = _z_transport_tx_mutex_lock(ztc, cong_ctrl == Z_CONGESTION_CONTROL_BLOCK);
+        }
         if (ret != _Z_RES_OK) {
             _Z_INFO("Dropping zenoh batch because of congestion control");
             return ret;
@@ -310,7 +314,9 @@ static z_result_t _z_transport_tx_send_n_batch(_z_transport_common_t *ztc, z_con
         // Send batch
         _Z_DEBUG("Send network batch");
         ret = _z_transport_tx_flush_buffer(ztc, peers);
-        _z_transport_tx_mutex_unlock(ztc);
+        if (!_z_transport_batch_hold_tx_mutex()) {
+            _z_transport_tx_mutex_unlock(ztc);
+        }
         return ret;
     }
     return _Z_RES_OK;
@@ -468,29 +474,33 @@ z_result_t _z_send_n_msg(_z_session_t *zn, const _z_network_message_t *z_msg, z_
     z_result_t ret = _Z_RES_OK;
     // Call transport function
     switch (zn->_tp._type) {
-        case _Z_TRANSPORT_UNICAST_TYPE:
+        case _Z_TRANSPORT_UNICAST_TYPE: {
+            _z_transport_common_t *ztc = &zn->_tp._transport._unicast._common;
             if (zn->_mode == Z_WHATAMI_CLIENT) {
-                ret = _z_transport_tx_send_n_msg(&zn->_tp._transport._unicast._common, z_msg, reliability, cong_ctrl,
-                                                 NULL);
-            } else if (_z_transport_peer_unicast_list_len(zn->_tp._transport._unicast._peers) > 0) {
-                _z_transport_peer_mutex_lock(&zn->_tp._transport._unicast._common);
+                ret = _z_transport_tx_send_n_msg(ztc, z_msg, reliability, cong_ctrl, NULL);
+            } else if (!_z_transport_peer_unicast_slist_is_empty(zn->_tp._transport._unicast._peers)) {
+                if (!_z_transport_batch_hold_peer_mutex()) {
+                    _z_transport_peer_mutex_lock(ztc);
+                }
                 if (peer == NULL) {
-                    ret = _z_transport_tx_send_n_msg(&zn->_tp._transport._unicast._common, z_msg, reliability,
-                                                     cong_ctrl, zn->_tp._transport._unicast._peers);
+                    ret = _z_transport_tx_send_n_msg(ztc, z_msg, reliability, cong_ctrl,
+                                                     zn->_tp._transport._unicast._peers);
                 } else {
                     // Send to a single peer, convert to peer list
-                    _z_transport_peer_unicast_list_t *dst_list = _z_transport_peer_unicast_list_new();
-                    dst_list = _z_transport_peer_unicast_list_push(dst_list, (_z_transport_peer_unicast_t *)peer);
+                    _z_transport_peer_unicast_slist_t *dst_list = _z_transport_peer_unicast_slist_push_empty(NULL);
                     if (dst_list != NULL) {
+                        memcpy(_z_transport_peer_unicast_slist_value(dst_list), (_z_transport_peer_unicast_t *)peer,
+                               sizeof(_z_transport_peer_unicast_t));
                         // Send message
-                        ret = _z_transport_tx_send_n_msg(&zn->_tp._transport._unicast._common, z_msg, reliability,
-                                                         cong_ctrl, dst_list);
+                        ret = _z_transport_tx_send_n_msg(ztc, z_msg, reliability, cong_ctrl, dst_list);
                         z_free(dst_list);
                     }
                 }
-                _z_transport_peer_mutex_unlock(&zn->_tp._transport._unicast._common);
+                if (!_z_transport_batch_hold_peer_mutex()) {
+                    _z_transport_peer_mutex_unlock(ztc);
+                }
             }
-            break;
+        } break;
         case _Z_TRANSPORT_MULTICAST_TYPE:
             ret =
                 _z_transport_tx_send_n_msg(&zn->_tp._transport._multicast._common, z_msg, reliability, cong_ctrl, NULL);
@@ -512,7 +522,7 @@ z_result_t _z_send_n_batch(_z_session_t *zn, z_congestion_control_t cong_ctrl) {
         case _Z_TRANSPORT_UNICAST_TYPE:
             if (zn->_mode == Z_WHATAMI_CLIENT) {
                 ret = _z_transport_tx_send_n_batch(&zn->_tp._transport._unicast._common, cong_ctrl, NULL);
-            } else if (_z_transport_peer_unicast_list_len(zn->_tp._transport._unicast._peers) > 0) {
+            } else if (!_z_transport_peer_unicast_slist_is_empty(zn->_tp._transport._unicast._peers)) {
                 _z_transport_peer_mutex_lock(&zn->_tp._transport._unicast._common);
                 ret = _z_transport_tx_send_n_batch(&zn->_tp._transport._unicast._common, cong_ctrl,
                                                    zn->_tp._transport._unicast._peers);
