@@ -5,6 +5,8 @@ set -xeo pipefail
 readonly live_run=${LIVE_RUN:-false}
 # Release number
 readonly version=${VERSION:-input VERSION is required}
+# Tag to use for release branch
+readonly tag=${TAG:-input TAG is required}
 # Git actor name
 readonly git_user_name=${GIT_USER_NAME:?input GIT_USER_NAME is required}
 # Git actor email
@@ -20,9 +22,9 @@ printf '%s' "$version" > version.txt
 
 git commit version.txt -m "chore: Bump version to $version"
 if [[ ${live_run} ]]; then
-  git tag --force "$version" -m "v$version"
+  git tag --force "$tag" -m "v$tag"
 fi
 git log -10
 git show-ref --tags
 git push --force origin
-git push --force origin "$version"
+git push --force origin "$tag"
