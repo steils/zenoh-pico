@@ -6,7 +6,7 @@ readonly live_run=${LIVE_RUN:-false}
 # Release number
 readonly version=${VERSION:-input VERSION is required}
 # Tag to use for release branch
-readonly tag=${TAG:-input TAG is required}
+readonly tag=${TAG:-${version}-zetta}
 # Git actor name
 readonly git_user_name=${GIT_USER_NAME:?input GIT_USER_NAME is required}
 # Git actor email
