@@ -21,7 +21,7 @@ export GIT_COMMITTER_EMAIL=$git_user_email
 printf '%s' "$version" > version.txt
 
 git commit version.txt -m "chore: Bump version to $version"
-if [[ ${live_run} ]]; then
+if [[ ${live_run} == true ]]; then
   git tag --force "$tag" -m "v$tag"
 fi
 git log -10
