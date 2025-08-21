@@ -78,7 +78,7 @@ static z_result_t _z_locators_by_scout(const _z_config_t *config, const _z_id_t 
     _ZP_UNUSED(zid);
     _ZP_UNUSED(locators);
     _Z_ERROR("Cannot scout as Z_FEATURE_SCOUTING was deactivated");
-    return _Z_ERR_SCOUT_NO_RESULTS;
+    _Z_ERROR_RETURN(_Z_ERR_SCOUT_NO_RESULTS);
 }
 #endif
 
@@ -106,7 +106,7 @@ static z_result_t _z_locators_by_config(_z_config_t *config, _z_string_svec_t *l
             key = Z_CONFIG_LISTEN_KEY;
             _zp_config_insert(config, Z_CONFIG_MODE_KEY, Z_CONFIG_MODE_PEER);
         } else {
-            return _Z_ERR_GENERIC;
+            _Z_ERROR_RETURN(_Z_ERR_GENERIC);
         }
     } else {
         *peer_op = _Z_PEER_OP_OPEN;
@@ -126,6 +126,7 @@ static z_result_t _z_config_get_mode(const _z_config_t *config, z_whatami_t *mod
             *mode = Z_WHATAMI_PEER;
         } else {
             _Z_ERROR("Trying to configure an invalid mode: %s", s_mode);
+            _Z_ERROR_LOG(_Z_ERR_CONFIG_INVALID_MODE);
             ret = _Z_ERR_CONFIG_INVALID_MODE;
         }
     }
@@ -187,7 +188,7 @@ z_result_t _z_open(_z_session_rc_t *zn, _z_config_t *config, const _z_id_t *zid)
         _Z_RETURN_IF_ERR(_z_locators_by_scout(config, zid, &locators));
         len = _z_string_svec_len(&locators);
         if (len == 0) {
-            return _Z_ERR_SCOUT_NO_RESULTS;
+            _Z_ERROR_RETURN(_Z_ERR_SCOUT_NO_RESULTS);
         }
         // We can only open on scout locators
         peer_op = _Z_PEER_OP_OPEN;
@@ -265,41 +266,56 @@ void _z_cache_declaration(_z_session_t *zs, const _z_network_message_t *n_msg) {
 #define _Z_CACHE_DECLARATION_UNDECLARE_FILTER(tp)                                                                     \
     static bool _z_cache_declaration_undeclare_filter_##tp(const _z_network_message_t *left,                          \
                                                            const _z_network_message_t *right) {                       \
-        return left->_body._declare._decl._body._undecl_##tp._id == right->_body._declare._decl._body._decl_##tp._id; \
+        return left->_tag == _Z_N_DECLARE && right->_tag == _Z_N_DECLARE &&                                           \
+               left->_body._declare._decl._body._undecl_##tp._id == right->_body._declare._decl._body._decl_##tp._id; \
     }
 _Z_CACHE_DECLARATION_UNDECLARE_FILTER(kexpr)
 _Z_CACHE_DECLARATION_UNDECLARE_FILTER(subscriber)
 _Z_CACHE_DECLARATION_UNDECLARE_FILTER(queryable)
 _Z_CACHE_DECLARATION_UNDECLARE_FILTER(token)
 
+static bool _z_cache_declaration_undeclare_filter_interest(const _z_network_message_t *left,
+                                                           const _z_network_message_t *right) {
+    return left->_tag == _Z_N_INTEREST && right->_tag == _Z_N_INTEREST &&
+           left->_body._interest._interest._id == right->_body._interest._interest._id;
+}
+
 void _z_prune_declaration(_z_session_t *zs, const _z_network_message_t *n_msg) {
-    if (n_msg->_tag != _Z_N_DECLARE) {
-        _Z_ERROR("Invalid net message for _z_prune_declaration: %i", n_msg->_tag);
-        return;
-    }
 #ifdef Z_BUILD_DEBUG
     size_t cnt_before = _z_network_message_slist_len(zs->_declaration_cache);
 #endif
-    const _z_declaration_t *decl = &n_msg->_body._declare._decl;
-    switch (decl->_tag) {
-        case _Z_UNDECL_KEXPR:
-            zs->_declaration_cache = _z_network_message_slist_drop_filter(
-                zs->_declaration_cache, _z_cache_declaration_undeclare_filter_kexpr, n_msg);
+    switch (n_msg->_tag) {
+        case _Z_N_DECLARE: {
+            const _z_declaration_t *decl = &n_msg->_body._declare._decl;
+            switch (decl->_tag) {
+                case _Z_UNDECL_KEXPR:
+                    zs->_declaration_cache = _z_network_message_slist_drop_filter(
+                        zs->_declaration_cache, _z_cache_declaration_undeclare_filter_kexpr, n_msg);
+                    break;
+                case _Z_UNDECL_SUBSCRIBER:
+                    zs->_declaration_cache = _z_network_message_slist_drop_filter(
+                        zs->_declaration_cache, _z_cache_declaration_undeclare_filter_subscriber, n_msg);
+                    break;
+                case _Z_UNDECL_QUERYABLE:
+                    zs->_declaration_cache = _z_network_message_slist_drop_filter(
+                        zs->_declaration_cache, _z_cache_declaration_undeclare_filter_queryable, n_msg);
+                    break;
+                case _Z_UNDECL_TOKEN:
+                    zs->_declaration_cache = _z_network_message_slist_drop_filter(
+                        zs->_declaration_cache, _z_cache_declaration_undeclare_filter_token, n_msg);
+                    break;
+                default:
+                    _Z_ERROR("Invalid decl for _z_prune_declaration: %i", decl->_tag);
+            };
             break;
-        case _Z_UNDECL_SUBSCRIBER:
+        }
+        case _Z_N_INTEREST:
             zs->_declaration_cache = _z_network_message_slist_drop_filter(
-                zs->_declaration_cache, _z_cache_declaration_undeclare_filter_subscriber, n_msg);
-            break;
-        case _Z_UNDECL_QUERYABLE:
-            zs->_declaration_cache = _z_network_message_slist_drop_filter(
-                zs->_declaration_cache, _z_cache_declaration_undeclare_filter_queryable, n_msg);
-            break;
-        case _Z_UNDECL_TOKEN:
-            zs->_declaration_cache = _z_network_message_slist_drop_filter(
-                zs->_declaration_cache, _z_cache_declaration_undeclare_filter_token, n_msg);
+                zs->_declaration_cache, _z_cache_declaration_undeclare_filter_interest, n_msg);
             break;
         default:
-            _Z_ERROR("Invalid decl for _z_prune_declaration: %i", decl->_tag);
+            _Z_ERROR("Invalid net message for _z_prune_declaration: %i", n_msg->_tag);
+            return;
     };
 #ifdef Z_BUILD_DEBUG
     size_t cnt_after = _z_network_message_slist_len(zs->_declaration_cache);
@@ -344,7 +360,7 @@ _z_config_t *_z_info(const _z_session_t *zn) {
     return ps;
 }
 
-z_result_t _zp_read(_z_session_t *zn) { return _z_read(&zn->_tp); }
+z_result_t _zp_read(_z_session_t *zn, bool single_read) { return _z_read(&zn->_tp, single_read); }
 
 z_result_t _zp_send_keep_alive(_z_session_t *zn) { return _z_send_keep_alive(&zn->_tp); }
 
@@ -356,6 +372,7 @@ z_result_t _zp_start_read_task(_z_session_t *zn, z_task_attr_t *attr) {
     // Allocate task
     _z_task_t *task = (_z_task_t *)z_malloc(sizeof(_z_task_t));
     if (task == NULL) {
+        _Z_ERROR_LOG(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
         ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
     }
     // Call transport function
@@ -370,6 +387,7 @@ z_result_t _zp_start_read_task(_z_session_t *zn, z_task_attr_t *attr) {
             ret = _zp_raweth_start_read_task(&zn->_tp, attr, task);
             break;
         default:
+            _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
             ret = _Z_ERR_TRANSPORT_NOT_AVAILABLE;
             break;
     }
@@ -389,6 +407,7 @@ z_result_t _zp_start_lease_task(_z_session_t *zn, z_task_attr_t *attr) {
     // Allocate task
     _z_task_t *task = (_z_task_t *)z_malloc(sizeof(_z_task_t));
     if (task == NULL) {
+        _Z_ERROR_LOG(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
         ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
     }
     // Call transport function
@@ -403,6 +422,7 @@ z_result_t _zp_start_lease_task(_z_session_t *zn, z_task_attr_t *attr) {
             ret = _zp_multicast_start_lease_task(&zn->_tp._transport._raweth, attr, task);
             break;
         default:
+            _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
             ret = _Z_ERR_TRANSPORT_NOT_AVAILABLE;
             break;
     }
@@ -431,6 +451,7 @@ z_result_t _zp_stop_read_task(_z_session_t *zn) {
             ret = _zp_raweth_stop_read_task(&zn->_tp);
             break;
         default:
+            _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
             ret = _Z_ERR_TRANSPORT_NOT_AVAILABLE;
             break;
     }
@@ -451,6 +472,7 @@ z_result_t _zp_stop_lease_task(_z_session_t *zn) {
             ret = _zp_multicast_stop_lease_task(&zn->_tp._transport._raweth);
             break;
         default:
+            _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
             ret = _Z_ERR_TRANSPORT_NOT_AVAILABLE;
             break;
     }
