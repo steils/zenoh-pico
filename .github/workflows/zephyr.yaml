@@ -47,8 +47,6 @@ jobs:
       - name: Set up project
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           mkdir -p $ZEPHYR_BASE
           cd $ZEPHYR_BASE
@@ -65,8 +63,6 @@ jobs:
       - name: Build z_pub example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src
@@ -78,8 +74,6 @@ jobs:
       - name: Build z_sub example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src
@@ -91,8 +85,6 @@ jobs:
       - name: Build z_pull example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src
@@ -104,8 +96,6 @@ jobs:
       - name: Build z_get example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src
@@ -117,8 +107,6 @@ jobs:
       - name: Build z_queryable example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src
@@ -130,8 +118,6 @@ jobs:
       - name: Build z_scout example
         run: |
           cd $HOME
-          export ZEPHYR_BASE=$HOME/work/zephyrproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ZEPHYR_BASE/src/*
           cd $ZEPHYR_BASE/src

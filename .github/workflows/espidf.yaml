@@ -47,8 +47,6 @@ jobs:
       - name: Set up project
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           mkdir -p $ESPIDF_BASE
           cd $ESPIDF_BASE
@@ -62,8 +60,6 @@ jobs:
       - name: Build z_pub example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
@@ -75,8 +71,6 @@ jobs:
       - name: Build z_sub example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
@@ -88,8 +82,6 @@ jobs:
       - name: Build z_pull example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
@@ -101,8 +93,6 @@ jobs:
       - name: Build z_get example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
@@ -114,8 +104,6 @@ jobs:
       - name: Build z_queryable example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
@@ -127,8 +115,6 @@ jobs:
       - name: Build z_scout example
         run: |
           cd $HOME
-          export ESPIDF_BASE=$HOME/work/espidfproject/
-          export ZENOH_PICO_BASE=$HOME/work/zenoh-pico/zenoh-pico/
 
           rm -rf $ESPIDF_BASE/src/*
           cd $ESPIDF_BASE/src
