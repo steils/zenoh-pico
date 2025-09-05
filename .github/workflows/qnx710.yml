@@ -36,6 +36,9 @@ jobs:
       - name: Build
         run: |
           source ~/qnx710/qnxsdp-env.sh
+          Z_FEATURE_UNSTABLE_API=1 \
+          Z_FEATURE_ADVANCED_PUBLICATION=1 \
+          Z_FEATURE_ADVANCED_SUBSCRIPTION=1 \
           make CMAKE_TOOLCHAIN_FILE=${PWD}/ports/qnx/qnx-sdp710-${ARCH}.cmake
         env:
           ARCH: ${{ matrix.arch}}

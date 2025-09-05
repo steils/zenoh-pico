@@ -467,6 +467,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   pico_target_link_library(Iphlpapi)
 endif()
 
+if(CMAKE_SYSTEM_NAME MATCHES "QNX")
+  pico_target_link_library(m)
+endif()
+
 #
 # Build tests, examples, installation only when project is root
 #
