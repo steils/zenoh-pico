@@ -87,7 +87,16 @@ jobs:
         cd zenoh-cpp/build
         cmake --build . --target tests --config Release
 
+    # On macOS, sudo is required to run tests due to LAN access permissions
+    - name: run tests (with sudo on macOS)
+      if: ${{ matrix.os == 'macos-latest' }}
+      shell: bash
+      run: |
+        cd zenoh-cpp/build
+        sudo ctest -C Release --output-on-failure
+
     - name: run tests
+      if: ${{ matrix.os != 'macos-latest' }}
       run: |
         cd zenoh-cpp/build
         ctest -C Release --output-on-failure
