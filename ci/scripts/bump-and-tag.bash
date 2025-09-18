@@ -20,7 +20,7 @@ export GIT_COMMITTER_EMAIL=$git_user_email
 # Bump CMake project version
 printf '%s' "$version" > version.txt
 
-git commit version.txt -m "chore: Bump version to $version"
+git diff-index --quiet HEAD || git commit version.txt -m "chore: Bump version to $version"
 if [[ ${live_run} == true ]]; then
   git tag --force "$tag" -m "v$tag"
   git show-ref --tags
