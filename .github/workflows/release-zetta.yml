@@ -179,7 +179,7 @@ jobs:
         with:
           repo: ${{ github.repository }}
           live-run: ${{ inputs.live-run || false }}
-          version: ${{ needs.tag.outputs.version }}
+          version: ${{ inputs.tag }}
           branch: ${{ needs.tag.outputs.branch }}
           github-token: ${{ secrets.ZETTASCALE_BOT_PERSONAL_ACCESS_TOKEN }}
           archive-patterns: '.*\.zip'
