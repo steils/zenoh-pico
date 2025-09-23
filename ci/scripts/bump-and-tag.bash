@@ -31,3 +31,6 @@ else
   git --no-pager log -10
   git push --force origin
 fi
+
+# Set computed tag as output
+echo "tag=${tag}" >> "$GITHUB_OUTPUT"
