@@ -18,6 +18,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "zenoh-pico/utils/logging.h"
+
 /*-------- vec --------*/
 _z_vec_t _z_vec_make(size_t capacity) {
     _z_vec_t v = {0};
@@ -162,6 +164,9 @@ void _z_svec_move(_z_svec_t *dst, _z_svec_t *src) {
 z_result_t _z_svec_copy(_z_svec_t *dst, const _z_svec_t *src, z_element_copy_f copy, size_t element_size,
                         bool use_elem_f) {
     *dst = _z_svec_null();
+    if (src->_capacity == 0) {
+        return _Z_RES_OK;
+    }
     dst->_val = z_malloc(element_size * src->_capacity);
     if (dst->_val == NULL) {
         _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);

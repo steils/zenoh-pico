@@ -18,6 +18,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "zenoh-pico/utils/logging.h"
+
 /*-------- hashmap --------*/
 void _z_hashmap_init(_z_hashmap_t *map, size_t capacity, z_element_hash_f f_hash, z_element_eq_f f_equals) {
     map->_capacity = capacity;
@@ -94,7 +96,7 @@ void _z_hashmap_remove(_z_hashmap_t *map, const void *k, z_element_free_f f) {
         e._key = (void *)k;  // k will not be mutated by this operation
         e._val = NULL;
 
-        map->_vals[idx] = _z_list_drop_filter(map->_vals[idx], f, map->_f_equals, &e);
+        map->_vals[idx] = _z_list_drop_filter(map->_vals[idx], f, map->_f_equals, &e, true);
     }
 }
 

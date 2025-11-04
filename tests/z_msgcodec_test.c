@@ -205,7 +205,7 @@ _z_id_t gen_zid(void) {
     for (uint8_t i = 0; i < len; i++) {
         uint8_t byte = gen_uint8();
         id.id[i] = byte;
-        hash ^= i * byte;
+        hash = (uint8_t)(hash ^ i * byte);
     }
     id.id[0] = hash;
     return id;
@@ -1179,15 +1179,15 @@ _z_network_message_t gen_declare_message(void) {
     bool has_id = gen_bool();
     uint32_t id = gen_uint32();
     _z_network_message_t n_msg;
-    _z_n_msg_make_declare(&n_msg, declaration, has_id, id);
+    _z_n_msg_make_declare(&n_msg, declaration, has_id ? _z_optional_id_make_some(id) : _z_optional_id_make_none());
     return n_msg;
 }
 
 void assert_eq_declare_message(_z_n_msg_declare_t *left, _z_n_msg_declare_t *right) {
     printf("   ");
-    assert(left->has_interest_id == right->has_interest_id);
-    if (left->has_interest_id) {
-        assert(left->_interest_id == right->_interest_id);
+    assert(left->_interest_id.has_value == right->_interest_id.has_value);
+    if (left->_interest_id.has_value) {
+        assert(left->_interest_id.value == right->_interest_id.value);
     }
     assert_eq_declaration(&left->_decl, &right->_decl);
     printf("\n");
