@@ -16,6 +16,8 @@
 
 #include <string.h>
 
+#include "zenoh-pico/utils/logging.h"
+
 #ifdef Z_FEATURE_UNSTABLE_API
 #if Z_FEATURE_PERIODIC_TASKS == 1
 
@@ -75,11 +77,12 @@ z_result_t _zp_periodic_scheduler_init(_zp_periodic_scheduler_t *scheduler) {
     scheduler->_time.ctx = scheduler;
     scheduler->_next_id = 1;
     scheduler->_inflight_id = _ZP_PERIODIC_SCHEDULER_INVALID_ID;
+    scheduler->_initialized = true;
     return _Z_RES_OK;
 }
 
 void _zp_periodic_scheduler_clear(_zp_periodic_scheduler_t *scheduler) {
-    if (scheduler == NULL) {
+    if (scheduler == NULL || !scheduler->_initialized) {
         return;
     }
 
@@ -192,8 +195,8 @@ z_result_t _zp_periodic_scheduler_remove(_zp_periodic_scheduler_t *scheduler, ui
     bool removed = false;
     if (!_zp_periodic_task_list_is_empty(scheduler->_tasks)) {
         size_t expected_len = (scheduler->_inflight != NULL) ? scheduler->_task_count - 2 : scheduler->_task_count - 1;
-        scheduler->_tasks = _zp_periodic_task_list_drop_filter(scheduler->_tasks, _zp_periodic_task_eq,
-                                                               &(const _zp_periodic_task_t){._id = id});
+        scheduler->_tasks = _zp_periodic_task_list_drop_first_filter(scheduler->_tasks, _zp_periodic_task_eq,
+                                                                     &(const _zp_periodic_task_t){._id = id});
         size_t new_len = _zp_periodic_task_list_len(scheduler->_tasks);
         if (new_len == expected_len) {
             scheduler->_task_count--;
