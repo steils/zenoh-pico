@@ -168,7 +168,9 @@ _z_wbuf_t gen_wbuf(size_t len) {
         len = 1 + (gen_zint() % len);
     }
 
-    return _z_wbuf_make(len, is_expandable);
+    _z_wbuf_t wbuf = _z_wbuf_make(len, is_expandable);
+    assert(_z_wbuf_capacity(&wbuf) == len);
+    return wbuf;
 }
 
 _z_slice_t gen_slice(size_t len) {
@@ -233,7 +235,7 @@ _z_string_svec_t gen_str_array(size_t size) {
     _z_string_svec_t sa = _z_string_svec_make(size);
     for (size_t i = 0; i < size; i++) {
         _z_string_t s = gen_string(16);
-        _z_string_svec_append(&sa, &s, true);
+        assert(_z_string_svec_append(&sa, &s, true) == _Z_RES_OK);
     }
 
     return sa;
@@ -624,8 +626,6 @@ void source_info_field(void) {
     printf("\n");
 
     // Free
-    _z_source_info_clear(&e_si);
-    _z_source_info_clear(&d_si);
     _z_zbuf_clear(&zbf);
     _z_wbuf_clear(&wbf);
 }
@@ -1639,6 +1639,65 @@ void response_final_message(void) {
     _z_wbuf_clear(&wbf);
 }
 
+_z_n_msg_oam_t gen_oam(void) {
+    _z_qos_t qos_default = {._val = 5};
+    _z_n_msg_oam_t oam = {
+        ._id = gen_uint16(),
+        ._ext_timestamp = gen_bool() ? gen_timestamp() : _z_timestamp_null(),
+        ._ext_qos = gen_bool() ? _z_n_qos_make(gen_bool(), gen_bool(), gen_uint8() % 8) : qos_default,
+    };
+    switch (gen_uint8() % 3) {
+        case 0: {
+            oam._enc = _Z_OAM_BODY_UNIT;
+        } break;
+        case 1: {
+            oam._enc = _Z_OAM_BODY_ZINT;
+            oam._body._zint._val = gen_zint();
+        } break;
+        case 2:
+        default: {
+            oam._enc = _Z_OAM_BODY_ZBUF;
+            oam._body._zbuf._val = gen_slice(gen_uint8());
+        } break;
+    }
+    return oam;
+}
+void assert_eq_oam(const _z_n_msg_oam_t *left, const _z_n_msg_oam_t *right) {
+    assert(left->_id == right->_id);
+    assert_eq_timestamp(&left->_ext_timestamp, &right->_ext_timestamp);
+    assert(left->_ext_qos._val == right->_ext_qos._val);
+    assert(left->_enc == right->_enc);
+    switch (left->_enc) {
+        case _Z_OAM_BODY_UNIT:
+            break;
+            ;
+        case _Z_OAM_BODY_ZINT:
+            assert(left->_body._zint._val == right->_body._zint._val);
+            break;
+        case _Z_OAM_BODY_ZBUF:
+            assert_eq_slice(&left->_body._zbuf._val, &right->_body._zbuf._val);
+            break;
+        default:
+            assert(false);
+    }
+}
+void oam_message(void) {
+    printf("\n>> OAM message\n");
+    _z_wbuf_t wbf = gen_wbuf(UINT16_MAX);
+    _z_n_msg_oam_t expected = gen_oam();
+    assert(_z_oam_encode(&wbf, &expected) == _Z_RES_OK);
+    _z_n_msg_oam_t decoded = {0};
+    _z_zbuf_t zbf = _z_wbuf_to_zbuf(&wbf);
+    uint8_t header = _z_zbuf_read(&zbf);
+    z_result_t ret = _z_oam_decode(&decoded, &zbf, header);
+    assert(_Z_RES_OK == ret);
+    assert_eq_oam(&expected, &decoded);
+    _z_n_msg_oam_clear(&decoded);
+    _z_n_msg_oam_clear(&expected);
+    _z_zbuf_clear(&zbf);
+    _z_wbuf_clear(&wbf);
+}
+
 _z_transport_message_t gen_join(void) {
     _z_conduit_sn_list_t conduit = {._is_qos = gen_bool()};
     if (conduit._is_qos) {
@@ -1843,7 +1902,7 @@ _z_network_message_svec_t gen_net_msgs(size_t n) {
     _z_network_message_svec_t ret = _z_network_message_svec_make(n);
     for (size_t i = 0; i < n; i++) {
         _z_network_message_t msg = gen_net_msg();
-        _z_network_message_svec_append(&ret, &msg, false);
+        assert(_z_network_message_svec_append(&ret, &msg, false) == _Z_RES_OK);
     }
     return ret;
 }
@@ -2113,6 +2172,7 @@ int main(void) {
         request_message();
         response_message();
         response_final_message();
+        oam_message();
 
         // Transport messages
         join_message();

@@ -107,6 +107,24 @@ void _z_n_msg_response_clear(_z_n_msg_response_t *msg) {
     }
 }
 
+void _z_n_msg_oam_clear(_z_n_msg_oam_t *oam) {
+    _z_timestamp_clear(&oam->_ext_timestamp);
+    switch (oam->_enc) {
+        case _Z_OAM_BODY_UNIT: {
+            _z_msg_ext_clear_unit(&oam->_body._unit);
+            break;
+        }
+        case _Z_OAM_BODY_ZINT: {
+            _z_msg_ext_clear_zint(&oam->_body._zint);
+            break;
+        }
+        case _Z_OAM_BODY_ZBUF: {
+            _z_msg_ext_clear_zbuf(&oam->_body._zbuf);
+            break;
+        }
+    }
+}
+
 void _z_n_msg_clear(_z_network_message_t *msg) {
     switch (msg->_tag) {
         case _Z_N_PUSH:
@@ -126,6 +144,9 @@ void _z_n_msg_clear(_z_network_message_t *msg) {
             break;
         case _Z_N_INTEREST:
             _z_n_msg_interest_clear(&msg->_body._interest);
+            break;
+        case _Z_N_OAM:
+            _z_n_msg_oam_clear(&msg->_body._oam);
             break;
         default:
             break;
@@ -210,6 +231,7 @@ void _z_n_msg_make_push_del(_z_network_message_t *dst, const _z_keyexpr_t *key, 
     dst->_body._push._body._body._del._commons._timestamp = (timestamp == NULL) ? _z_timestamp_null() : *timestamp;
     dst->_body._push._body._body._del._commons._source_info =
         (source_info == NULL) ? _z_source_info_null() : *source_info;
+    dst->_body._push._body._body._del._attachment = _z_bytes_null();
 }
 
 void _z_n_msg_make_reply_ok_put(_z_network_message_t *dst, const _z_id_t *zid, _z_zint_t rid, const _z_keyexpr_t *key,
@@ -383,6 +405,18 @@ static z_result_t _z_n_msg_interest_copy(_z_network_message_t *dst, const _z_net
     return _Z_RES_OK;
 }
 
+static z_result_t _z_n_msg_oam_copy(_z_network_message_t *dst, const _z_network_message_t *src) {
+    memcpy(dst, src, sizeof(_z_network_message_t));
+    switch (src->_body._oam._enc) {
+        case _Z_OAM_BODY_ZBUF:
+            _Z_RETURN_IF_ERR(_z_slice_copy(&dst->_body._oam._body._zbuf._val, &src->_body._oam._body._zbuf._val));
+            break;
+        default:
+            break;
+    }
+    return _Z_RES_OK;
+}
+
 z_result_t _z_n_msg_copy(_z_network_message_t *dst, const _z_network_message_t *src) {
     switch (src->_tag) {
         case _Z_N_PUSH:
@@ -397,6 +431,8 @@ z_result_t _z_n_msg_copy(_z_network_message_t *dst, const _z_network_message_t *
             return _z_n_msg_declare_copy(dst, src);
         case _Z_N_INTEREST:
             return _z_n_msg_interest_copy(dst, src);
+        case _Z_N_OAM:
+            return _z_n_msg_oam_copy(dst, src);
         default:
             _Z_ERROR_RETURN(_Z_ERR_ENTITY_UNKNOWN);
     }

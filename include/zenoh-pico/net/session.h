@@ -37,6 +37,8 @@ extern "C" {
 /**
  * A zenoh-net session.
  */
+struct _z_write_filter_registration_t;
+
 typedef struct _z_session_t {
 #if Z_FEATURE_MULTI_THREAD == 1
     bool _mutex_inner_initialized;
@@ -46,6 +48,11 @@ typedef struct _z_session_t {
     // Zenoh-pico is considering a single transport per session.
     z_whatami_t _mode;
     _z_transport_t _tp;
+
+#if Z_FEATURE_MULTI_THREAD == 1
+    bool _read_task_should_run;
+    bool _lease_task_should_run;
+#endif
 
     // Zenoh PID
     _z_id_t _local_zid;
@@ -100,6 +107,7 @@ typedef struct _z_session_t {
 #if Z_FEATURE_INTEREST == 1
     _z_session_interest_rc_slist_t *_local_interests;
     _z_declare_data_slist_t *_remote_declares;
+    struct _z_write_filter_registration_t *_write_filters;
 #endif
 
 #ifdef Z_FEATURE_UNSTABLE_API
@@ -107,6 +115,8 @@ typedef struct _z_session_t {
 #if Z_FEATURE_PERIODIC_TASKS == 1
 #if Z_FEATURE_MULTI_THREAD == 1
     _z_task_t *_periodic_scheduler_task;
+    bool _periodic_task_should_run;
+    z_task_attr_t *_periodic_scheduler_task_attr;
 #endif
     _zp_periodic_scheduler_t _periodic_scheduler;
 #endif
@@ -167,6 +177,11 @@ void _z_close(_z_session_t *session);
  * Return true is session and all associated transports were closed.
  */
 bool _z_session_is_closed(const _z_session_t *session);
+
+/**
+ * Return true if session is connected to at least one router peer.
+ */
+bool _z_session_has_router_peer(const _z_session_t *session);
 
 /**
  * Upgrades weak session session, than resets it to null if session is closed.

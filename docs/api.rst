@@ -474,26 +474,13 @@ Represents sample source information.
 
 Types
 ^^^^^
-.. c:type:: z_owned_source_info_t
-.. c:type:: z_loaned_source_info_t
-.. c:type:: z_moved_source_info_t
+.. c:type:: z_source_info_t
 
 Functions
 ^^^^^^^^^
 .. autocfunction:: primitives.h::z_source_info_new
 .. autocfunction:: primitives.h::z_source_info_sn
 .. autocfunction:: primitives.h::z_source_info_id
-
-Ownership Functions
-^^^^^^^^^^^^^^^^^^^
-
-See details at :ref:`owned_types_concept`
-
-.. c:function:: void z_source_info_drop(z_moved_source_info_t * source_info) 
-.. c:function:: void z_source_info_clone(z_owned_source_info_t * dst, const z_loaned_source_info_t * source_info) 
-.. c:function:: const z_loaned_source_info_t * z_source_info_loan(const z_owned_source_info_t * source_info)
-.. c:function:: z_loaned_source_info_t * z_source_info_loan_mut(z_owned_source_info_t * source_info)
-.. c:function:: z_result_t z_source_info_take_from_loaned(z_owned_source_info_t *dst, z_loaned_source_info_t *src)
 
 Closures
 ========
@@ -1058,12 +1045,15 @@ See details at :ref:`owned_types_concept`
 .. c:type:: z_moved_session_t
 
 .. c:type:: z_id_t
+.. c:type:: z_open_options_t
 
 Functions
 ^^^^^^^^^
 .. autocfunction:: primitives.h::z_open
+.. autocfunction:: primitives.h::z_open_options_default
 .. autocfunction:: primitives.h::z_close
 .. autocfunction:: primitives.h::z_session_is_closed
+.. autocfunction:: primitives.h::z_session_id
 
 .. autocfunction:: primitives.h::z_info_zid
 .. autocfunction:: primitives.h::z_info_routers_zid
@@ -1128,6 +1118,7 @@ Constants
 .. autocenum:: constants.h::z_congestion_control_t
 .. autocenum:: constants.h::z_priority_t
 .. autocenum:: constants.h::z_reliability_t
+.. autocenum:: constants.h::z_locality_t
 
 Functions
 ---------
@@ -1361,6 +1352,7 @@ Functions
 .. autocfunction:: primitives.h::z_query_reply
 .. autocfunction:: primitives.h::z_query_reply_err
 .. autocfunction:: primitives.h::z_query_reply_del
+.. autocfunction:: primitives.h::z_query_source_info
 
 Ownership Functions
 -------------------
@@ -1629,6 +1621,35 @@ Functions
 .. autocfunction:: liveliness.h::z_liveliness_declare_background_subscriber
 .. autocfunction:: liveliness.h::z_liveliness_get
 
+Cancellation Token
+==================
+Types
+-----
+
+Represents a Cancellation token entity, which is used to interrupt initiated queries (unstable).
+See details at :ref:`owned_types_concept`
+
+.. c:type:: z_owned_cancellation_token_t
+.. c:type:: z_loaned_cancellation_token_t
+.. c:type:: z_moved_cancellation_token_t
+
+
+Functions
+---------
+.. autocfunction:: primitives.h::z_cancellation_token_new
+.. autocfunction:: primitives.h::z_cancellation_token_is_cancelled
+.. autocfunction:: primitives.h::z_cancellation_token_cancel
+
+Ownership Functions
+^^^^^^^^^^^^^^^^^^^
+
+See details at :ref:`owned_types_concept`
+
+.. c:function:: void z_cancellation_token_drop(z_moved_cancellation_token_t *cancellation_token) 
+.. c:function:: void z_cancellation_token_clone(z_owned_cancellation_token_t *dst, const z_loaned_cancellation_token_t *src) 
+.. c:function:: const z_loaned_cancellation_token_t *z_cancellation_token_loan(const z_owned_cancellation_token_t * cancellation_token)
+.. c:function:: z_loaned_cancellation_token * z_cancellation_token_loan_mut(z_owned_cancellation_token_t *cancellation_token)
+.. c:function:: z_result_t z_cancellation_token_take_from_loaned(z_owned_cancellation_token_t *dst, z_loaned_cancellation_token_t *src)
 
 Others
 ======
@@ -1661,14 +1682,17 @@ Functions
 .. autocfunction:: primitives.h::zp_task_read_options_default
 .. autocfunction:: primitives.h::zp_start_read_task
 .. autocfunction:: primitives.h::zp_stop_read_task
+.. autocfunction:: primitives.h::zp_read_task_is_running
 
 .. autocfunction:: primitives.h::zp_task_lease_options_default
 .. autocfunction:: primitives.h::zp_start_lease_task
 .. autocfunction:: primitives.h::zp_stop_lease_task
+.. autocfunction:: primitives.h::zp_lease_task_is_running
 
 .. autocfunction:: primitives.h::zp_task_periodic_scheduler_options_default
 .. autocfunction:: primitives.h::zp_start_periodic_scheduler_task
 .. autocfunction:: primitives.h::zp_stop_periodic_scheduler_task
+.. autocfunction:: primitives.h::zp_periodic_scheduler_task_is_running
 
 .. autocfunction:: primitives.h::zp_read_options_default
 .. autocfunction:: primitives.h::zp_read
@@ -1712,7 +1736,7 @@ CMake build provides a variable ``ZENOH_LOG`` which accepts the following values
 
     ZENOH_LOG=debug make  # build zenoh-pico with debug and higher level messages enabled
 
-When building zenoh-pico from source, logging can be enabled by defining corresponding macro, like ``-DZENOH_LOG_DEBUG``.
+When building zenoh-pico from source, logging can be enabled by defining corresponding macro, like ``-DZENOH_LOG=DEBUG``.
 
 Override Logs printing
 ----------------------
