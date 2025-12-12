@@ -26,13 +26,16 @@
 // Space for 10 digits + NULL
 #define ZE_ADVANCED_PUBLISHER_UINT32_STR_BUF_LEN 11
 
-static _ze_advanced_publisher_state_t _ze_advanced_publisher_state_null(void) {
-    _ze_advanced_publisher_state_t state = {0};
-    state._zn = _z_session_weak_null();
-    z_internal_publisher_null(&state._publisher);
-    state._state_publisher_task_id = _ZP_PERIODIC_SCHEDULER_INVALID_ID;
-    state._seqnumber = _z_seqnumber_null();
-    return state;
+static z_result_t _ze_advanced_publisher_state_init(_ze_advanced_publisher_state_t *state) {
+    if (state == NULL) {
+        _Z_ERROR_RETURN(_Z_ERR_INVALID);
+    }
+    state->_heartbeat_mode = ZE_ADVANCED_PUBLISHER_HEARTBEAT_MODE_NONE;
+    state->_last_published_sn = 0;
+    z_internal_publisher_null(&state->_publisher);
+    state->_state_publisher_task_id = _ZP_PERIODIC_SCHEDULER_INVALID_ID;
+    state->_zn = _z_session_weak_null();
+    return _z_seqnumber_init(&state->_seqnumber);
 }
 
 static bool _ze_advanced_publisher_state_check(const _ze_advanced_publisher_state_t *state) {
@@ -57,14 +60,14 @@ void _ze_advanced_publisher_state_clear(_ze_advanced_publisher_state_t *state) {
     }
     _z_session_weak_drop(&state->_zn);
     state->_heartbeat_mode = ZE_ADVANCED_PUBLISHER_HEARTBEAT_MODE_NONE;
-    state->_seqnumber = _z_seqnumber_null();
+    _z_seqnumber_drop(&state->_seqnumber);
     state->_last_published_sn = 0;
 }
 
 bool _ze_advanced_publisher_check(const _ze_advanced_publisher_t *pub) {
     return z_internal_publisher_check(&pub->_publisher) &&
            (!pub->_has_liveliness || z_internal_liveliness_token_check(&pub->_liveliness)) &&
-           (!_Z_RC_IS_NULL(&pub->_state) && _ze_advanced_publisher_state_check(_Z_RC_IN_VAL(&pub->_state)));
+           (_Z_RC_IS_NULL(&pub->_state) || _ze_advanced_publisher_state_check(_Z_RC_IN_VAL(&pub->_state)));
 }
 
 _ze_advanced_publisher_t _ze_advanced_publisher_null(void) {
@@ -255,18 +258,17 @@ z_result_t ze_declare_advanced_publisher(const z_loaned_session_t *zs, ze_owned_
             z_publisher_drop(z_publisher_move(&pub->_val._publisher));
             _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
         }
-        *state = _ze_advanced_publisher_state_null();
+        _Z_CLEAN_RETURN_IF_ERR(_ze_advanced_publisher_state_init(state),
+                               z_publisher_drop(z_publisher_move(&pub->_val._publisher));
+                               z_free(state));
 
         pub->_val._state = _ze_advanced_publisher_state_rc_new(state);
         if (_Z_RC_IS_NULL(&pub->_val._state)) {
+            _ze_advanced_publisher_state_clear(state);
             z_free(state);
             z_publisher_drop(z_publisher_move(&pub->_val._publisher));
             _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
         }
-
-        _Z_CLEAN_RETURN_IF_ERR(_z_seqnumber_init(&state->_seqnumber),
-                               _ze_advanced_publisher_state_rc_drop(&pub->_val._state);
-                               z_publisher_drop(z_publisher_move(&pub->_val._publisher)));
     } else if (opt.cache.is_enabled) {
         pub->_val._sequencing = _ZE_ADVANCED_PUBLISHER_SEQUENCING_TIMESTAMP;
     } else {
@@ -372,8 +374,7 @@ z_result_t ze_declare_advanced_publisher(const z_loaned_session_t *zs, ze_owned_
 }
 
 static z_result_t _ze_advanced_publisher_sequencing_options(const ze_loaned_advanced_publisher_t *pub,
-                                                            z_owned_source_info_t *source_info,
-                                                            z_timestamp_t *timestamp) {
+                                                            z_source_info_t *source_info, z_timestamp_t *timestamp) {
     if (source_info == NULL || timestamp == NULL) {
         _Z_ERROR_RETURN(_Z_ERR_INVALID);
     }
@@ -385,7 +386,7 @@ static z_result_t _ze_advanced_publisher_sequencing_options(const ze_loaned_adva
         z_entity_global_id_t publisher_id = z_publisher_id(publisher);
         uint32_t seqnumber = 0;
         _Z_RETURN_IF_ERR(_z_seqnumber_fetch_and_increment(&_Z_RC_IN_VAL(&pub->_state)->_seqnumber, &seqnumber));
-        (void)z_source_info_new(source_info, &publisher_id, seqnumber);
+        *source_info = z_source_info_new(&publisher_id, seqnumber);
     }
 
     // Set timestamp
@@ -416,11 +417,10 @@ z_result_t ze_advanced_publisher_put(const ze_loaned_advanced_publisher_t *pub, 
     }
 
     z_timestamp_t timestamp = _z_timestamp_null();
-    z_owned_source_info_t si;
-    z_internal_source_info_null(&si);
+    z_source_info_t si = _z_source_info_null();
     _Z_RETURN_IF_ERR(_ze_advanced_publisher_sequencing_options(pub, &si, &timestamp));
     opt.put_options.timestamp = &timestamp;
-    opt.put_options.source_info = z_source_info_move(&si);
+    opt.put_options.source_info = &si;
     return _z_publisher_put_impl(z_publisher_loan(&pub->_publisher), payload, &opt.put_options, pub->_cache);
 }
 
@@ -433,11 +433,10 @@ z_result_t ze_advanced_publisher_delete(const ze_loaned_advanced_publisher_t *pu
     }
 
     z_timestamp_t timestamp = _z_timestamp_null();
-    z_owned_source_info_t si;
-    z_internal_source_info_null(&si);
+    z_source_info_t si = _z_source_info_null();
     _Z_RETURN_IF_ERR(_ze_advanced_publisher_sequencing_options(pub, &si, &timestamp));
     opt.delete_options.timestamp = &timestamp;
-    opt.delete_options.source_info = z_source_info_move(&si);
+    opt.delete_options.source_info = &si;
     return _z_publisher_delete_impl(z_publisher_loan(&pub->_publisher), &opt.delete_options, pub->_cache);
 }
 

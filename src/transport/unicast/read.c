@@ -55,7 +55,7 @@ static z_result_t _z_unicast_process_messages(_z_transport_unicast_t *ztu, _z_tr
         ret = _z_unicast_handle_transport_message(ztu, &t_msg, peer);
         if (ret != _Z_RES_OK) {
             if (ret != _Z_ERR_CONNECTION_CLOSED) {
-                _Z_INFO("Connection compromised due to message processing error: %d", ret);
+                _Z_WARN("Connection compromised due to message processing error: %d", ret);
             }
             return ret;
         }
@@ -284,6 +284,7 @@ static z_result_t _zp_unicast_process_peer_event(_z_transport_unicast_t *ztu) {
                     // Process one message
                     if (_z_unicast_process_messages(ztu, curr_peer, to_read) != _Z_RES_OK) {
                         // Failed to process, drop peer
+                        _Z_ERROR("Dropping peer due to processing error");
                         drop_peer = true;
                         prev_drop = prev;
                         break;
@@ -332,6 +333,7 @@ void *_zp_unicast_read_task(void *ztu_arg) {
 
     // Prepare the buffer
     _z_zbuf_reset(&ztu->_common._zbuf);
+
     z_whatami_t mode = _z_transport_common_get_session(&ztu->_common)->_mode;
     _z_transport_peer_unicast_t *curr_peer = NULL;
     if (mode == Z_WHATAMI_CLIENT) {
