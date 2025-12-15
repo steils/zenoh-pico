@@ -637,6 +637,10 @@ jobs:
     name: CppCheck
     uses: ./.github/workflows/cpp-check.yaml
 
+  qnx:
+    name: QNX Build
+    uses: ./.github/workflows/qnx710.yml
+
   # NOTE: In GitHub repository settings, the "Require status checks to pass
   # before merging" branch protection rule ensures that commits are only merged
   # from branches where specific status checks have passed. These checks are
@@ -679,6 +683,7 @@ jobs:
         zephyr,
         codacy-security-scan,
         cpp_check,
+        qnx,
       ]
     if: always()
     steps:
