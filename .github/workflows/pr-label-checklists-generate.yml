@@ -16,8 +16,8 @@ jobs:
       pull-requests: write
       statuses: write
       contents: read
-    uses: eclipse-zenoh/ci/.github/workflows/pr-label-checklists-generate.yml@main
+    uses: ZettaScaleLabs/ci/.github/workflows/pr-label-checklists-generate.yml@main
     with:
-      checklists-repo: eclipse-zenoh/ci
+      checklists-repo: ZettaScaleLabs/ci
     secrets:
       github-token: ${{ secrets.GITHUB_TOKEN }}
