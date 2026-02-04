@@ -124,8 +124,8 @@ jobs:
           Z_FEATURE_RAWETH_TRANSPORT=1 CMAKE_GENERATOR=Ninja make
 
   tls_build:
-    name: Build TLS transport on ubuntu-latest
-    runs-on: ubuntu-latest
+    name: Build TLS transport on ubuntu-runner-set
+    runs-on: ubuntu-runner-set
     steps:
       - name: Setup mbedtls
         uses: eclipse-zenoh/ci/setup-mbedtls@main
@@ -252,7 +252,7 @@ jobs:
 
   advanced_publisher_build:
     name: Check compilation with advanced publisher
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -264,7 +264,7 @@ jobs:
 
   advanced_subscriber_build:
     name: Check compilation with advanced subscriber
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -276,7 +276,7 @@ jobs:
 
   gcc10_build:
     name: Check compilation with GCC 10
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -288,7 +288,7 @@ jobs:
 
   gcc9_build:
     name: Check compilation with Ubuntu 20.04 (GCC 9)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     container: ubuntu:20.04
     env:
       DEBIAN_FRONTEND: noninteractive
@@ -492,7 +492,7 @@ jobs:
   routed_peer_client_test:
     needs: zenoh_build
     name: Test routed peer client communication
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
