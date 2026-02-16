@@ -94,8 +94,8 @@ jobs:
           ZENOH_BRANCH: main
 
   asan-build:
-    name: Build on ubuntu-latest with ASAN
-    runs-on: ubuntu-latest
+    name: Build on ubuntu-runner-set with ASAN
+    runs-on: ubuntu-runner-set
     strategy:
       fail-fast: false
 
