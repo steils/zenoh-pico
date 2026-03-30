@@ -69,7 +69,7 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_pub.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
 
       - name: Build z_sub example
         run: |
@@ -80,7 +80,7 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_sub.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
 
       - name: Build z_pull example
         run: |
@@ -91,7 +91,7 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_pull.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
 
       - name: Build z_get example
         run: |
@@ -102,7 +102,7 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_get.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
 
       - name: Build z_queryable example
         run: |
@@ -113,7 +113,7 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_queryable.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
 
       - name: Build z_scout example
         run: |
@@ -124,4 +124,4 @@ jobs:
           ln -s $ZENOH_PICO_BASE/examples/zephyr/z_scout.c
 
           cd $ZEPHYR_BASE
-          pio run
+          pio run -j1
