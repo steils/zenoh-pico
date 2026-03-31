@@ -25,7 +25,6 @@ jobs:
       matrix:
         os:
           - [ubuntu-runner-set]
-          - [self-hosted, macos-latest]
     steps:
       - name: Set git line endings config for windows
         if: ${{ contains(matrix.os, 'windows-latest') }}

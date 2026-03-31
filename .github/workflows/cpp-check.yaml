@@ -37,8 +37,6 @@ jobs:
       matrix:
         os:
           - [ubuntu-runner-set]
-          - [self-hosted, macos-latest]
-          - [self-hosted, windows-latest]
         unstable: [0, 1]
 
     steps:
