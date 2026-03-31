@@ -31,7 +31,7 @@ jobs:
         with:
           path: |
             ~/.cache/pip
-            ~/.platformio/.cache
+            ~/.platformio/
           key: ${{ runner.os }}-pio
       - uses: actions/setup-python@v5
         with:
