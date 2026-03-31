@@ -26,7 +26,7 @@ jobs:
         os: [ubuntu-runner-set]
 
     env:
-      IDF_COMPONENT_MANAGER: "0"   # ← disable pacman to avoid the pydantic crash
+      IDF_COMPONENT_MANAGER: "0" # ← disable pacman to avoid the pydantic crash
 
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
           key: ${{ runner.os }}-pio
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
