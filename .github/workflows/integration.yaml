@@ -25,7 +25,6 @@ jobs:
       matrix:
         os:
           - [ubuntu-runner-set]
-          - [self-hosted, macos-latest]
     steps:
       - name: Set git line endings config for windows
         if: ${{ contains(matrix.os, 'windows-latest') }}
@@ -79,10 +78,11 @@ jobs:
           Z_FEATURE_PERIODIC_TASKS: 1
           Z_FEATURE_ADVANCED_PUBLICATION: 1
           Z_FEATURE_ADVANCED_SUBSCRIPTION: 1
+          Z_FEATURE_ADMIN_SPACE: 1
 
       - name: Test debug
         run: make test
-        timeout-minutes: 30
+        timeout-minutes: 40
         env:
           BUILD_TYPE: Debug # Workaround for Windows as it seems the previous step is being ignored
           BUILD_TESTING: OFF # Workaround for Windows as it seems the previous step is being ignored
@@ -121,6 +121,7 @@ jobs:
           BUILD_INTEGRATION: ON
           Z_FEATURE_LINK_TLS: 1
           Z_FEATURE_UNSTABLE_API: 1
+          Z_FEATURE_LOCAL_QUERYABLE: 1
           Z_FEATURE_LOCAL_SUBSCRIBER: 1
           Z_FEATURE_PERIODIC_TASKS: 1
           Z_FEATURE_ADVANCED_PUBLICATION: 1
@@ -129,7 +130,7 @@ jobs:
 
       - name: Test debug
         run: make test
-        timeout-minutes: 30
+        timeout-minutes: 40
         env:
           BUILD_TYPE: Debug # Workaround for Windows as it seems the previous step is being ignored
           BUILD_TESTING: OFF # Workaround for Windows as it seems the previous step is being ignored

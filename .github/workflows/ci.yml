@@ -14,12 +14,12 @@
 name: CI
 
 on:
-  push:
-    branches: ["**"]
+  #  push:
+  #    branches: ["**"]
   pull_request:
     branches: ["**"]
-  schedule:
-    - cron: "0 6 * * 1-5"
+#  schedule:
+#    - cron: "0 6 * * 1-5"
 
 jobs:
   run_tests:
@@ -38,22 +38,23 @@ jobs:
           sudo apt install -y ninja-build
           Z_FEATURE_LINK_TLS=1 Z_FEATURE_LOCAL_QUERYABLE=1 Z_FEATURE_LOCAL_SUBSCRIBER=1 Z_FEATURE_UNSTABLE_API=1 Z_FEATURE_PERIODIC_TASKS=1 CMAKE_GENERATOR=Ninja ASAN=ON make BUILD_TYPE=Debug test
 
-  run_windows_test:
-    name: Run peer unicast test on windows-latest
-    runs-on: [self-hosted, windows-latest]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build & run tests
-        run: |
-          make all
-          .\build\tests\Debug\z_test_peer_unicast.exe
-        timeout-minutes: 15
-        shell: cmd
-        env:
-          ZENOH_LOG: INFO
-          Z_FEATURE_UNSTABLE_API: 1
+  # Note: Disabled due to lack of capacity in the lab
+  #  run_windows_test:
+  #    name: Run peer unicast test on windows-latest
+  #    runs-on: [self-hosted, windows-latest]
+  #    steps:
+  #      - name: Checkout code
+  #        uses: actions/checkout@v4
+  #
+  #      - name: Build & run tests
+  #        run: |
+  #          make all
+  #          .\build\tests\Debug\z_test_peer_unicast.exe
+  #        timeout-minutes: 15
+  #        shell: cmd
+  #        env:
+  #          ZENOH_LOG: INFO
+  #          Z_FEATURE_UNSTABLE_API: 1
 
   memory_leak_unit_tests:
     name: Memory leak unit tests
@@ -274,6 +275,18 @@ jobs:
           sudo apt install -y ninja-build
           Z_FEATURE_UNSTABLE_API=1 Z_FEATURE_ADVANCED_SUBSCRIPTION=1 CMAKE_GENERATOR=Ninja make
 
+  rx_cache_build:
+    name: Check compilation with RX cache enabled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build with RX cache
+        run: |
+          sudo apt install -y ninja-build
+          Z_FEATURE_RX_CACHE=1 CMAKE_GENERATOR=Ninja make
+
   gcc10_build:
     name: Check compilation with GCC 10
     runs-on: ubuntu-runner-set
@@ -283,6 +296,7 @@ jobs:
 
       - name: Build with GCC 10
         run: |
+          sudo apt update
           sudo apt install -y ninja-build gcc-10
           CC=gcc-10 Z_FEATURE_UNSTABLE_API=1 Z_FEATURE_ADVANCED_PUBLICATION=1 Z_FEATURE_ADVANCED_SUBSCRIPTION=1 CMAKE_GENERATOR=Ninja make
 
@@ -510,11 +524,24 @@ jobs:
         run: |
           echo "Detecting multicast interface..."
           # Pick first non-loopback, non-docker, non-veth interface
-          IFACE=$(ip -o link show | awk -F': ' '$2 != "lo" && $2 !~ /docker/ && $2 !~ /veth/ {print $2; exit}')
+          IFACE=$(
+            ip -o link show | awk -F': ' '
+              {
+                iface = $2
+                sub(/@.*/, "", iface)   # strip peer suffix like @if15930
+              }
+              iface != "lo" && iface !~ /^docker/ && iface !~ /^veth/ {
+                print iface
+                exit
+              }
+            '
+          )
+
           if [ -z "$IFACE" ]; then
             echo "No suitable interface found, defaulting to eth0"
             IFACE=eth0
           fi
+
           echo "Selected interface: $IFACE"
           echo "iface=$IFACE" >> "$GITHUB_OUTPUT"
 

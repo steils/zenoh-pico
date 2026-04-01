@@ -248,6 +248,7 @@ z_result_t _z_unicast_handshake_listen(_z_transport_unicast_establish_param_t *p
     param->_req_id_res = iam._body._init._req_id_res;
     param->_batch_size = iam._body._init._batch_size;
     param->_remote_zid = tmsg._body._init._zid;
+    param->_remote_whatami = tmsg._body._init._whatami;
     param->_key_id_res = 0x08 << param->_key_id_res;
     param->_req_id_res = 0x08 << param->_req_id_res;
     _z_t_msg_clear(&tmsg);
@@ -328,8 +329,10 @@ z_result_t _z_unicast_transport_close(_z_transport_unicast_t *ztu, uint8_t reaso
 }
 
 void _z_unicast_transport_clear(_z_transport_unicast_t *ztu, bool detach_tasks) {
-    _z_common_transport_clear(&ztu->_common, detach_tasks);
+    _z_transport_common_stop_tasks(&ztu->_common, detach_tasks);
     _z_transport_peer_unicast_slist_free(&ztu->_peers);
+    _z_transport_common_clear(
+        &ztu->_common);  // free common in the very end, as peers might access the link data in common while being freed
 }
 
 #else
