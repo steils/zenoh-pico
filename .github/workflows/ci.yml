@@ -523,11 +523,24 @@ jobs:
         run: |
           echo "Detecting multicast interface..."
           # Pick first non-loopback, non-docker, non-veth interface
-          IFACE=$(ip -o link show | awk -F': ' '$2 != "lo" && $2 !~ /docker/ && $2 !~ /veth/ {print $2; exit}')
+          IFACE=$(
+            ip -o link show | awk -F': ' '
+              {
+                iface = $2
+                sub(/@.*/, "", iface)   # strip peer suffix like @if15930
+              }
+              iface != "lo" && iface !~ /^docker/ && iface !~ /^veth/ {
+                print iface
+                exit
+              }
+            '
+          )
+
           if [ -z "$IFACE" ]; then
             echo "No suitable interface found, defaulting to eth0"
             IFACE=eth0
           fi
+
           echo "Selected interface: $IFACE"
           echo "iface=$IFACE" >> "$GITHUB_OUTPUT"
 
