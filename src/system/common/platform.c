@@ -13,16 +13,7 @@
 
 #include "zenoh-pico/system/common/platform.h"
 
-#include <stdio.h>
-#if defined(ZENOH_LINUX) || defined(ZENOH_MACOS) || defined(ZENOH_BSD)
-#include <arpa/inet.h>
-#endif
-#if defined(ZENOH_FREERTOS_LWIP)
-#include "lwip/inet.h"
-#endif
-
 #include "zenoh-pico/api/olv_macros.h"
-#include "zenoh-pico/utils/logging.h"
 
 #if Z_FEATURE_MULTI_THREAD == 1
 
@@ -131,7 +122,7 @@ z_result_t _z_ip_port_to_endpoint(const uint8_t *address, size_t address_len, ui
 #endif
 
 #if !defined(ZENOH_WINDOWS) && !defined(ZENOH_LINUX) && !defined(ZENOH_MACOS) && !defined(ZENOH_BSD) && \
-    !defined(ZENOH_ZEPHYR) && !defined(ZENOH_QNX)
+    !defined(ZENOH_ZEPHYR)
 z_result_t _z_socket_get_endpoints(const _z_sys_net_socket_t *sock, char *local, size_t local_len, char *remote,
                                    size_t remote_len) {
     _ZP_UNUSED(sock);
