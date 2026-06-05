@@ -129,7 +129,6 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 if(CMAKE_BUILD_TYPE MATCHES "RELEASE" OR "Release")
   if(CMAKE_SYSTEM_NAME MATCHES "QNX")
     add_compile_options(-O3)
-    add_link_options(-l socket)
   elseif(UNIX)
     add_compile_options(-pipe -O3)
   elseif(CMAKE_SYSTEM_NAME MATCHES "Generic")
@@ -140,7 +139,6 @@ else()
     add_compile_options(-c -Wall -Wextra -Wno-unused -Wno-strict-prototypes -pipe -g -O0)
   elseif(CMAKE_SYSTEM_NAME MATCHES "QNX")
     add_compile_options(-c -Wall -Wextra -Werror -Wshadow -Wunused -Wstrict-prototypes -g -O0)
-    add_link_options(-l socket)
   elseif(UNIX)
     add_compile_options(-c -Wall -Wextra -Werror -Wshadow -Wunused -Wstrict-prototypes -pipe -g -O0)
     # C99 pedantic doesn't like struct anonymous in unix header
@@ -213,22 +211,51 @@ endif()
 
 if(ZP_SYSTEM_LAYER STREQUAL "macos")
   set(MACOSX_RPATH "ON")
-elseif(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
-  pico_add_compile_definition(ZENOH_EMSCRIPTEN)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  pico_add_compile_definition(ZENOH_WINDOWS)
-  pico_add_compile_definition(_CRT_SECURE_NO_WARNINGS)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Generic")
-  if(WITH_ZEPHYR)
-    pico_add_compile_definition(ZENOH_ZEPHYR)
-  elseif(WITH_FREERTOS_PLUS_TCP)
-    pico_add_compile_definition(ZENOH_FREERTOS_PLUS_TCP)
-  elseif(WITH_FREERTOS_LWIP)
-    pico_add_compile_definition(ZENOH_FREERTOS_LWIP)
+endif()
+
+set(_zp_platform_globbed_sources "")
+foreach(_zp_platform_source_glob IN LISTS ZP_PLATFORM_SOURCE_GLOBS)
+  file(GLOB _zp_globbed_platform_sources ${_zp_platform_source_glob})
+  list(APPEND _zp_platform_globbed_sources ${_zp_globbed_platform_sources})
+endforeach()
+set(_zp_platform_sources
+    ${_zp_platform_globbed_sources}
+    ${ZP_PLATFORM_SOURCE_FILES})
+set(_zp_platform_include_dirs ${ZP_PLATFORM_INCLUDE_DIRS})
+set(_zp_platform_compile_definitions ${ZP_PLATFORM_COMPILE_DEFINITIONS})
+set(_zp_platform_compile_options ${ZP_PLATFORM_COMPILE_OPTIONS})
+set(_zp_platform_link_libraries ${ZP_PLATFORM_LINK_LIBRARIES})
+set(_zp_platform_imported_targets "")
+foreach(_zp_platform_target IN LISTS _zp_platform_link_libraries)
+  if(NOT TARGET "${_zp_platform_target}")
+    continue()
   endif()
-elseif(CMAKE_SYSTEM_NAME MATCHES "PICO") # Raspberry Pi Pico Series
-  pico_add_compile_definition(ZENOH_RPI_PICO)
-  set(CHECK_THREADS "OFF")
+
+  get_property(_zp_is_imported TARGET "${_zp_platform_target}" PROPERTY IMPORTED)
+  if(NOT _zp_is_imported)
+    message(FATAL_ERROR
+            "Platform from ${ZP_PLATFORM_PROFILE_FILE} requires "
+            "ZP_PLATFORM_LINK_LIBRARIES targets to be imported/exported package targets. "
+            "Local targets created directly inside package config files are not supported "
+            "because they break static install/export paths.")
+  endif()
+
+  get_target_property(_zp_platform_target_type "${_zp_platform_target}" TYPE)
+  if(_zp_platform_target_type STREQUAL "INTERFACE_LIBRARY")
+    get_target_property_if_set(_zp_interface_sources "${_zp_platform_target}" INTERFACE_SOURCES)
+    if(NOT "${_zp_interface_sources}" STREQUAL "")
+      message(FATAL_ERROR
+              "External platform target ${_zp_platform_target} must not use INTERFACE_SOURCES. "
+              "Define a real library target instead.")
+    endif()
+  endif()
+
+  list(APPEND _zp_platform_imported_targets "${_zp_platform_target}")
+endforeach()
+list(REMOVE_DUPLICATES _zp_platform_imported_targets)
+zp_source_list_requires_cxx(_zp_platform_uses_cxx ${_zp_platform_sources})
+if(_zp_platform_uses_cxx)
+  set(ZP_USES_CXX ON)
 else()
   set(ZP_USES_CXX OFF)
   foreach(_zp_platform_target IN LISTS _zp_platform_imported_targets)
@@ -520,31 +547,22 @@ file(GLOB_RECURSE Sources
   "src/utils/*.c"
   "src/system/common/*.c"
 )
-
-if(WITH_ZEPHYR)
-  file (GLOB Sources_Zephyr "src/system/zephyr/*.c")
-  list(APPEND Sources ${Sources_Zephyr})
-elseif(WITH_FREERTOS_PLUS_TCP)
-  file (GLOB Sources_Freertos_Plus_TCP "src/system/freertos/freertos_plus_tcp/*.c")
-  list(APPEND Sources_Freertos_Plus_TCP "src/system/freertos/system.c")
-  list(APPEND Sources ${Sources_Freertos_Plus_TCP})
-elseif(WITH_FREERTOS_LWIP)
-  file (GLOB Sources_Freertos_Plus_LWIP "src/system/freertos/lwip/*.c")
-  list(APPEND Sources_Freertos_Plus_LWIP "src/system/freertos/system.c")
-  list(APPEND Sources ${Sources_Freertos_Plus_LWIP})
-elseif(WITH_RPI_PICO)
-  file (GLOB Sources_RPI_Pico "src/system/rpi_pico/*.c")
-  list(APPEND Sources ${Sources_RPI_Pico})
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "Darwin" OR CMAKE_SYSTEM_NAME MATCHES "BSD" OR POSIX_COMPATIBLE)
-  file (GLOB Sources_Unix "src/system/unix/*.c" "src/system/unix/link/*.c")
-  list(APPEND Sources ${Sources_Unix})
-elseif(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
-  file (GLOB Sources_Emscripten "src/system/emscripten/*.c")
-  list(APPEND Sources ${Sources_Emscripten})
-elseif(CMAKE_SYSTEM_NAME MATCHES "Windows")
-  file (GLOB Sources_Windows "src/system/windows/*.c")
-  list(APPEND Sources ${Sources_Windows})
-endif()
+file(GLOB LinkSources
+  "src/link/config/*.c"
+  "src/link/multicast/*.c"
+  "src/link/unicast/*.c"
+  "src/link/transport/common/*.c"
+)
+list(APPEND Sources ${LinkSources})
+list(APPEND Sources
+  "${PROJECT_SOURCE_DIR}/src/link/link.c"
+  "${PROJECT_SOURCE_DIR}/src/link/endpoint.c"
+  "${PROJECT_SOURCE_DIR}/src/link/transport/tcp/address.c"
+  "${PROJECT_SOURCE_DIR}/src/link/transport/udp/address.c"
+  "${PROJECT_SOURCE_DIR}/src/link/transport/upper/serial_protocol.c"
+  "${PROJECT_SOURCE_DIR}/src/link/transport/upper/tls_stream.c"
+)
+list(APPEND Sources ${_zp_platform_sources})
 
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/lib)
 link_directories(${LIBRARY_OUTPUT_PATH})
@@ -593,10 +611,6 @@ endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   pico_target_link_library(rt)
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "QNX")
-  pico_target_link_library(m)
 endif()
 
 #

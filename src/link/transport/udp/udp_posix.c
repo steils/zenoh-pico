@@ -17,6 +17,7 @@
 #if defined(ZP_PLATFORM_SOCKET_POSIX)
 
 #include <netdb.h>
+#include <netinet/in.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/socket.h>
