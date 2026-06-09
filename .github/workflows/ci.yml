@@ -14,12 +14,14 @@
 name: CI
 
 on:
-  #  push:
-  #    branches: ["**"]
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "release/*"
+      - "!release/dry-run/*"
   pull_request:
-    branches: ["**"]
-#  schedule:
-#    - cron: "0 6 * * 1-5"
+      types: [opened, ready_for_review]
 
 jobs:
   run_tests:
