@@ -14,12 +14,18 @@
 name: CI
 
 on:
-  #  push:
-  #    branches: ["**"]
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "release/*"
+      - "!release/dry-run/*"
   pull_request:
-    branches: ["**"]
-#  schedule:
-#    - cron: "0 6 * * 1-5"
+      types: [ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   run_tests:
