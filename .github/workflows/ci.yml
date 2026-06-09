@@ -21,7 +21,7 @@ on:
       - "release/*"
       - "!release/dry-run/*"
   pull_request:
-      types: [opened, ready_for_review]
+      types: [ready_for_review]
 
 jobs:
   run_tests:
