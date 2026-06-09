@@ -23,6 +23,10 @@ on:
   pull_request:
       types: [ready_for_review]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run_tests:
     name: Run unit tests on ubuntu-runner-set
