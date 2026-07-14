@@ -2831,8 +2831,6 @@ z_result_t z_query_reply(const z_loaned_query_t *query, const z_loaned_keyexpr_t
 z_result_t _z_query_reply_sample(const z_loaned_query_t *query, z_loaned_sample_t *sample,
                                  const z_query_reply_options_t *options);
 
-z_result_t z_query_take_from_loaned(z_owned_query_t *dst, z_loaned_query_t *src);
-
 /**
  * Builds a :c:type:`z_query_reply_del_options_t` with default values.
  *
@@ -3355,8 +3353,13 @@ z_result_t zp_send_join(const z_loaned_session_t *zs, const zp_send_join_options
  *
  * Parameters:
  *   zs: Pointer to a :c:type:`z_loaned_session_t` to spin executor for.
+ *
+ * Return:
+ *   Returns ``false`` if there are no more tasks that can be executed immediately. This can only happen when
+ * Z_RUNTIME_IDLE_READ_TASK_SLEEP is set to positive value; otherwise read tasks always reschedule immediately, and
+ * ``true`` is always returned unless the session is closed.
  */
-void zp_spin_once(const z_loaned_session_t *zs);
+bool zp_spin_once(const z_loaned_session_t *zs);
 #endif
 
 #ifdef Z_FEATURE_UNSTABLE_API
