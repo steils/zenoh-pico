@@ -154,14 +154,19 @@ z_result_t _z_locator_metadata_from_string(_z_str_intmap_t *strint, const _z_str
         return _Z_RES_OK;
     }
 
-    const char *p_end = (char *)memchr(_z_string_data(str), ENDPOINT_CONFIG_SEPARATOR, _z_string_len(str));
+    size_t curr_len = _z_string_len(str) - start_offset;
+    const char *p_end = memchr(p_start, ENDPOINT_CONFIG_SEPARATOR, curr_len);
     if (p_end == NULL) {
-        p_end = _z_cptr_char_offset(_z_string_data(str), (ptrdiff_t)_z_string_len(str) + 1);
+        p_end = _z_cptr_char_offset(p_start, (ptrdiff_t)curr_len);
     }
 
     if (p_start != p_end) {
         size_t p_len = _z_ptr_char_diff(p_end, p_start);
-        return _z_str_intmap_from_strn(strint, p_start, 0, NULL, p_len);
+        z_result_t ret = _z_str_intmap_from_strn(strint, p_start, 0, NULL, p_len);
+        if (ret == _Z_ERR_CONFIG_INVALID_VALUE) {
+            return _Z_ERR_CONFIG_LOCATOR_INVALID;
+        }
+        return ret;
     }
     return _Z_RES_OK;
 }
@@ -260,8 +265,8 @@ static void __z_locator_onto_string(_z_string_t *dst, const _z_locator_t *loc) {
  *   The z_stringified :c:type:`_z_locator_t`.
  */
 _z_string_t _z_locator_to_string(const _z_locator_t *loc) {
-    _z_string_t s = _z_string_preallocate(_z_locator_strlen(loc));
-    if (!_z_string_check(&s)) {
+    _z_string_t s;
+    if (_z_string_preallocate(&s, _z_locator_strlen(loc)) != _Z_RES_OK) {
         return s;
     }
     __z_locator_onto_string(&s, loc);
@@ -553,8 +558,7 @@ _z_string_t _z_endpoint_to_string(const _z_endpoint_t *endpoint) {
         curr_len += config_len;
     }
     // Reconstruct the endpoint as a string
-    ret = _z_string_preallocate(curr_len);
-    if (!_z_string_check(&ret)) {
+    if (_z_string_preallocate(&ret, curr_len) != _Z_RES_OK) {
         // cppcheck-suppress misra-c2012-17.3
         _z_string_clear(&locator);
         if (config != NULL) {
