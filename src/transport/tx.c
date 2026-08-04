@@ -148,10 +148,12 @@ z_result_t _z_transport_manager_send_keep_alive(_z_transport_manager_t *manager)
         return ret;
     }
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    _z_unicast_transport_peer_t *peer = NULL;
-    _ZP_FOREACH (_z_unicast_transport_peer_hset, &manager->_unicast._peers, peer) {
+    for (_z_unicast_peer_slot_id_t iter = _z_unicast_transport_peer_established_begin(&manager->_unicast);
+         iter != _z_unicast_transport_peer_hmap_end(&manager->_unicast._peers);
+         iter = _z_unicast_transport_peer_established_iter_next(&manager->_unicast, iter)) {
+        _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_unicast._peers, iter);
         if (!peer->_transmitted) {
-            _z_unicast_transport_manager_send_t_msg_to_peer(&manager->_unicast, &msg, (size_t)peer_iter);
+            _z_unicast_transport_manager_send_t_msg_to_peer(&manager->_unicast, &msg, (size_t)iter);
             // TODO: handle the error
         }
         peer->_transmitted = false;

@@ -39,26 +39,13 @@ z_result_t _z_unicast_transport_listener_listen(_z_unicast_transport_listener_t 
     } else if (ret != _Z_RES_OK) {
         return Z_RETRY_LATER;
     }
-    _z_session_t *session = listener->_manager->_parent->_session;
-    // listen for handshake
-    _z_transport_unicast_establish_param_t param = {0};
-    ret = _z_unicast_handshake_listen(&param, &connection_link, &session->_local_zid, session->_mode);
-    if (ret == _Z_RES_OK) {
-        ret = _z_unicast_transport_manager_add_peer(listener->_manager, &param, &connection_link,
-                                                    _ZP_CONNECT_PEER_ID_FROM_LISTEN, NULL);
-        if (ret == _Z_RES_OK) {
-            _Z_INFO("Accepted new unicast peer " _Z_ID_PRINT_FORMAT " on: %s", _Z_ID_PRINT_ARGS(&param._remote_zid),
-                    *_z_config_listen_vec_at(&listener->_manager->_parent->_session->_config._listen,
-                                             (size_t)listener->_locator_id));
-            return _Z_RES_OK;
-        } else {
-            _z_unicast_link_clear(&connection_link);
-        }
-    } else {
+    ret = _z_unicast_transport_manager_accept_peer(listener->_manager, &connection_link);
+    if (ret != _Z_RES_OK) {
         _z_unicast_link_clear(&connection_link);
-        _Z_ERROR("Connection accept handshake failed with error %d", ret);
+        _Z_ERROR("Failed to accept connection with error %d", ret);
+        return Z_RETRY_LATER;
     }
-    return Z_RETRY_LATER;
+    return _Z_RES_OK;
 }
 
 void _z_unicast_transport_listener_clear(_z_unicast_transport_listener_t *listener) {

@@ -29,7 +29,7 @@ extern "C" {
 #endif
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-// Unicast peer. It represents a peer in a unicast connection. It owns a dedicated link.
+// Unicast peer. It represents a pending or established unicast connection. It owns a dedicated link.
 typedef struct _z_unicast_transport_peer_t {
     _z_unicast_link_t _link;
     _z_id_t _remote_zid;
@@ -55,11 +55,12 @@ typedef struct _z_unicast_transport_peer_t {
 #endif
     bool _received;        // indicates if the peer has received any message from the remote peer since last lease check
     uint16_t _rx_msg_len;  // the length of the current message being read (only for streamed links)
+    uint16_t _batch_size;
     uint8_t _remote_whatami;
     _z_connect_peer_id_t
         _locator_id;  // idx of the locator in the config._connect array that was used to connect to this peer
     uint32_t _lease_duration_ms;  // the lease duration of this peer in milliseconds
-    z_clock_t _lease_deadline;    // the time when the lease of this peer will expire
+    z_clock_t _lease_deadline;    // handshake timeout while pending; lease timeout once established
 } _z_unicast_transport_peer_t;
 
 // This type is not relocatable.
@@ -70,7 +71,7 @@ typedef struct _z_unicast_transport_peer_src_dst_address_t {
     _z_string_view_t dst;
 } _z_unicast_transport_peer_src_dst_address_t;
 
-void _z_unicast_transport_peer_src_dst_address_get(const _z_unicast_transport_peer_t *peer,
+void _z_unicast_transport_peer_src_dst_address_get(const _z_unicast_link_t *link,
                                                    _z_unicast_transport_peer_src_dst_address_t *address);
 
 void _z_unicast_transport_peer_clear(_z_unicast_transport_peer_t *peer);

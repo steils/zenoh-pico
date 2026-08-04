@@ -20,21 +20,21 @@
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 
 void _z_unicast_transport_peer_clear(_z_unicast_transport_peer_t *peer) {
-    _z_unicast_link_clear(&peer->_link);
 #if Z_FEATURE_BATCHING == 1
     _z_wbuf_clear(&peer->_tx_buffer);
 #endif
-    _z_zbuf_clear(&peer->_rx_buffer);
 #if Z_FEATURE_FRAGMENTATION == 1
     _z_dbuf_clear(&peer->_dbuf);
 #endif
+    _z_zbuf_clear(&peer->_rx_buffer);
+    _z_unicast_link_clear(&peer->_link);
     _ZP_UNUSED(peer);
 }
 
-void _z_unicast_transport_peer_src_dst_address_get(const _z_unicast_transport_peer_t *peer,
+void _z_unicast_transport_peer_src_dst_address_get(const _z_unicast_link_t *link,
                                                    _z_unicast_transport_peer_src_dst_address_t *out) {
     memset(out, 0, sizeof(_z_unicast_transport_peer_src_dst_address_t));
-    if (_z_unicast_link_get_locators(&peer->_link, out->_src_buf, _ZP_ARRAY_SIZE(out->_src_buf), out->_dst_buf,
+    if (_z_unicast_link_get_locators(link, out->_src_buf, _ZP_ARRAY_SIZE(out->_src_buf), out->_dst_buf,
                                      _ZP_ARRAY_SIZE(out->_dst_buf)) == _Z_RES_OK) {
         out->src = _z_string_view_make_from_str(out->_src_buf);
         out->dst = _z_string_view_make_from_str(out->_dst_buf);

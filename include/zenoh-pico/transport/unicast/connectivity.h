@@ -23,9 +23,9 @@ extern "C" {
 #endif
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 void _z_unicast_transport_manager_report_connected_event(_z_unicast_transport_manager_t *manager,
-                                                         _z_unicast_transport_peer_hset_iter_t iter);
+                                                         _z_unicast_peer_slot_id_t iter);
 void _z_unicast_transport_manager_report_disconnected_event(_z_unicast_transport_manager_t *manager,
-                                                            _z_unicast_transport_peer_hset_iter_t iter);
+                                                            _z_unicast_peer_slot_id_t iter);
 
 void _z_unicast_transport_manager_fetch_zid(const _z_unicast_transport_manager_t *manager, _z_closure_zid_t *callback,
                                             z_what_t filter);

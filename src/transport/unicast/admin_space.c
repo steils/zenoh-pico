@@ -40,8 +40,10 @@ z_result_t _z_unicast_transport_manager_encode_locators_json(const _z_unicast_tr
 
 z_result_t _z_unicast_transport_manager_encode_transports_json(const _z_unicast_transport_manager_t *manager,
                                                                _z_json_encoder_t *je) {
-    const _z_unicast_transport_peer_t *peer = NULL;
-    _ZP_CONST_FOREACH (_z_unicast_transport_peer_hset, &manager->_peers, peer) {
+    for (_z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_established_begin(manager);
+         id != _z_unicast_transport_peer_hmap_end(&manager->_peers);
+         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
+        const _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_const_at(&manager->_peers, id);
         _Z_RETURN_IF_ERR(_z_json_encoder_start_object(je));
 
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "peer"));
@@ -59,7 +61,7 @@ z_result_t _z_unicast_transport_manager_encode_transports_json(const _z_unicast_
         _Z_RETURN_IF_ERR(_z_json_encoder_start_array(je));
         _Z_RETURN_IF_ERR(_z_json_encoder_start_object(je));
         _z_unicast_transport_peer_src_dst_address_t address;
-        _z_unicast_transport_peer_src_dst_address_get(peer, &address);
+        _z_unicast_transport_peer_src_dst_address_get(&peer->_link, &address);
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "src"));
         _Z_RETURN_IF_ERR(_z_json_encoder_write_z_string(je, _z_string_view_deref(&address.src)));
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "dst"));

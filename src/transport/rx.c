@@ -180,7 +180,7 @@ z_result_t _z_transport_manager_read(_z_transport_manager_t *manager) {
 typedef struct _z_transport_manager_wait_iter_context_t {
     _z_transport_manager_t *manager;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    _z_unicast_transport_peer_hset_iter_t unicast_peer_iter;
+    _z_unicast_peer_slot_id_t unicast_slot_iter;
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
     size_t multicast_group_iter;
@@ -190,11 +190,16 @@ typedef struct _z_transport_manager_wait_iter_context_t {
 
 static bool _z_transport_manager_wait_iter_find_first_non_null(_z_transport_manager_wait_iter_context_t *ctx) {
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    _z_unicast_transport_peer_hset_iter_t u_end = _z_unicast_transport_peer_hset_end(&ctx->manager->_unicast._peers);
-    _ZP_IT_FIND(_z_unicast_transport_peer_hset, &ctx->manager->_unicast._peers, ctx->unicast_peer_iter, u_end,
-                _z_unicast_link_get_socket(&_->_link) != NULL);
-    if (ctx->unicast_peer_iter != u_end) {
-        return true;
+    _z_unicast_transport_peer_hmap_t *peers = &ctx->manager->_unicast._peers;
+    for (; ctx->unicast_slot_iter != _z_unicast_transport_peer_hmap_end(peers);
+         ctx->unicast_slot_iter = _z_unicast_transport_peer_hmap_iter_next(peers, ctx->unicast_slot_iter)) {
+        _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(peers, ctx->unicast_slot_iter);
+        if (_z_unicast_link_get_socket(&peer->_link) != NULL) {
+            return true;
+        } else {
+            _z_ready_links_mask_bitset_set(&ctx->ready_links_mask, ctx->unicast_slot_iter,
+                                           true);  // set the link as ready to force read on it
+        }
     }
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
@@ -211,7 +216,7 @@ static bool _z_transport_manager_wait_iter_find_first_non_null(_z_transport_mana
 bool _z_transport_manager_wait_iter_reset(_z_socket_wait_iter_t *iter) {
     _z_transport_manager_wait_iter_context_t *ctx = (_z_transport_manager_wait_iter_context_t *)iter->_ctx;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    ctx->unicast_peer_iter = _z_unicast_transport_peer_hset_begin(&ctx->manager->_unicast._peers);
+    ctx->unicast_slot_iter = _z_unicast_transport_peer_hmap_begin(&ctx->manager->_unicast._peers);
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
     ctx->multicast_group_iter = 0;
@@ -222,11 +227,12 @@ bool _z_transport_manager_wait_iter_reset(_z_socket_wait_iter_t *iter) {
 bool _z_transport_manager_wait_iter_next(_z_socket_wait_iter_t *iter) {
     _z_transport_manager_wait_iter_context_t *ctx = (_z_transport_manager_wait_iter_context_t *)iter->_ctx;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    _z_unicast_transport_peer_hset_iter_t u_end = _z_unicast_transport_peer_hset_end(&ctx->manager->_unicast._peers);
-    if (ctx->unicast_peer_iter != u_end) {
-        ctx->unicast_peer_iter =
-            _z_unicast_transport_peer_hset_iter_next(&ctx->manager->_unicast._peers, ctx->unicast_peer_iter);
-        return _z_transport_manager_wait_iter_find_first_non_null(ctx);
+    if (ctx->unicast_slot_iter != _z_unicast_transport_peer_hmap_end(&ctx->manager->_unicast._peers)) {
+        ctx->unicast_slot_iter =
+            _z_unicast_transport_peer_hmap_iter_next(&ctx->manager->_unicast._peers, ctx->unicast_slot_iter);
+        if (_z_transport_manager_wait_iter_find_first_non_null(ctx)) {
+            return true;
+        }
     }
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
@@ -242,10 +248,9 @@ bool _z_transport_manager_wait_iter_next(_z_socket_wait_iter_t *iter) {
 const _z_sys_net_socket_t *_z_transport_manager_wait_iter_get_socket(const _z_socket_wait_iter_t *iter) {
     _z_transport_manager_wait_iter_context_t *ctx = (_z_transport_manager_wait_iter_context_t *)iter->_ctx;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    if (ctx->unicast_peer_iter != _z_unicast_transport_peer_hset_end(&ctx->manager->_unicast._peers)) {
-        _z_unicast_transport_peer_t *peer =
-            _z_unicast_transport_peer_hset_at(&ctx->manager->_unicast._peers, ctx->unicast_peer_iter);
-        return _z_unicast_link_get_socket(&peer->_link);
+    if (ctx->unicast_slot_iter != _z_unicast_transport_peer_hmap_end(&ctx->manager->_unicast._peers)) {
+        return _z_unicast_link_get_socket(
+            &_z_unicast_transport_peer_at(&ctx->manager->_unicast._peers, ctx->unicast_slot_iter)->_link);
     }
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
@@ -261,8 +266,8 @@ const _z_sys_net_socket_t *_z_transport_manager_wait_iter_get_socket(const _z_so
 void _z_transport_manager_wait_iter_set_ready_f(_z_socket_wait_iter_t *iter, bool ready) {
     _z_transport_manager_wait_iter_context_t *ctx = (_z_transport_manager_wait_iter_context_t *)iter->_ctx;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    if (ctx->unicast_peer_iter != _z_unicast_transport_peer_hset_end(&ctx->manager->_unicast._peers)) {
-        _z_ready_links_mask_bitset_set(&ctx->ready_links_mask, (size_t)(ctx->unicast_peer_iter), ready);
+    if (ctx->unicast_slot_iter != _z_unicast_transport_peer_hmap_end(&ctx->manager->_unicast._peers)) {
+        _z_ready_links_mask_bitset_set(&ctx->ready_links_mask, ctx->unicast_slot_iter, ready);
         return;
     }
 #endif
@@ -270,6 +275,7 @@ void _z_transport_manager_wait_iter_set_ready_f(_z_socket_wait_iter_t *iter, boo
     if (ctx->multicast_group_iter < _z_multicast_transport_group_vec_size(&ctx->manager->_multicast._groups)) {
         _z_ready_links_mask_bitset_set(&ctx->ready_links_mask,
                                        (size_t)(ctx->multicast_group_iter + Z_MAX_NUM_UNICAST_PEERS), ready);
+        return;
     }
 #endif
 }
@@ -278,7 +284,7 @@ _z_ready_links_mask_bitset_t _z_transport_manager_wait_readable(_z_transport_man
     _z_transport_manager_wait_iter_context_t ctx;
     ctx.manager = manager;
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    ctx.unicast_peer_iter = _z_unicast_transport_peer_hset_begin(&manager->_unicast._peers);
+    ctx.unicast_slot_iter = _z_unicast_transport_peer_hmap_begin(&manager->_unicast._peers);
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1
     ctx.multicast_group_iter = 0;
