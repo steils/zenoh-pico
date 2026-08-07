@@ -40,7 +40,9 @@ jobs:
         with:
           mbedtls-version: mbedtls-3.6.5
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build & run tests
         run: |
@@ -61,7 +63,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Configure fuzz build
         run: |
@@ -120,7 +124,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Setup mbedtls
         uses: eclipse-zenoh/ci/setup-mbedtls@main
@@ -152,7 +158,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Run clang-format dry-run
         run: |
@@ -164,7 +172,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with C99
         run: |
@@ -176,7 +186,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build raweth
         run: |
@@ -193,7 +205,9 @@ jobs:
           mbedtls-version: mbedtls-3.6.5
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with TLS
         run: |
@@ -212,10 +226,26 @@ jobs:
         feature_query: [1, 0]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -251,7 +281,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with unstable
         run: |
@@ -263,7 +295,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build without scouting
         run: |
@@ -275,7 +309,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build without interests
         run: |
@@ -287,7 +323,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build without interests
         run: |
@@ -299,7 +337,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with advanced publisher
         run: |
@@ -311,7 +351,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with advanced subscriber
         run: |
@@ -323,7 +365,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with RX cache
         run: |
@@ -335,7 +379,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with GCC 10
         run: |
@@ -351,7 +397,9 @@ jobs:
       DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build with GCC 9
         run: |
@@ -368,10 +416,26 @@ jobs:
         unstable_api: [0, 1]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -406,10 +470,26 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -441,10 +521,26 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -480,10 +576,26 @@ jobs:
           mbedtls-version: mbedtls-3.6.5
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -521,7 +633,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build & test pico
         run: |
@@ -536,10 +650,26 @@ jobs:
     runs-on: [self-hosted, ubuntu-latest]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -560,10 +690,26 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Install ccache
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache
+
+      - name: Cache ccache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-ci-${{ github.job }}-${{ hashFiles('CMakeLists.txt', 'GNUmakefile', 'cmake/**', 'src/**', 'include/**', 'tests/**') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-ci-${{ github.job }}-
+            ${{ runner.os }}-ccache-ci-
 
       - name: Download and extract Zenoh
-        uses: robinraju/release-downloader@v1
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: eclipse-zenoh/zenoh
           latest: true
@@ -628,7 +774,9 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build & test pico
         run: |
@@ -648,7 +796,9 @@ jobs:
         feature_declarations: [1, 0]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
 
       - name: Build & test pico
         run: |
@@ -663,8 +813,11 @@ jobs:
   markdown_lint:
     runs-on: ubuntu-runner-set
     steps:
-      - uses: actions/checkout@v4
-      - uses: DavidAnson/markdownlint-cli2-action@v18
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
           config: ".markdownlint.yaml"
           globs: "**/README.md"
