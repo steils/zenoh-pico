@@ -75,7 +75,7 @@ static size_t established_count(z_owned_session_t *session) {
 static size_t active_slot_count(z_owned_session_t *session) {
     _z_session_t *inner = _Z_OWNED_RC_IN_VAL(session);
     CHECK(_z_background_executor_suspend(&inner->_runtime) == _Z_RES_OK);
-    size_t count = _z_unicast_transport_peer_hmap_size(&inner->_transport_manager._unicast._peers);
+    size_t count = _z_address_to_unicast_transport_peer_hmap_size(&inner->_transport_manager._unicast._peers);
     CHECK(_z_background_executor_resume(&inner->_runtime) == _Z_RES_OK);
     return count;
 }
@@ -125,7 +125,7 @@ static void close_all_peers(z_owned_session_t *session) {
     CHECK(_z_background_executor_suspend(&inner->_runtime) == _Z_RES_OK);
     _z_unicast_transport_manager_t *manager = &inner->_transport_manager._unicast;
     while (_z_unicast_transport_manager_get_peers_count(manager) > 0) {
-        _z_unicast_peer_slot_id_t peer_id = _z_unicast_transport_peer_established_begin(manager);
+        _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = _z_unicast_transport_peer_established_begin(manager);
         CHECK(_z_unicast_transport_manager_close_peer(manager, peer_id, NULL, NULL) == _Z_RES_OK);
     }
     CHECK(_z_background_executor_resume(&inner->_runtime) == _Z_RES_OK);
@@ -210,8 +210,8 @@ static void close_first_peer_and_keep_executor_suspended(z_owned_session_t *sess
     _z_session_t *inner = _Z_OWNED_RC_IN_VAL(session);
     CHECK(_z_background_executor_suspend(&inner->_runtime) == _Z_RES_OK);
     _z_unicast_transport_manager_t *manager = &inner->_transport_manager._unicast;
-    _z_unicast_peer_slot_id_t peer_id = _z_unicast_transport_peer_established_begin(manager);
-    CHECK(peer_id != _z_unicast_transport_peer_hmap_end(&manager->_peers));
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = _z_unicast_transport_peer_established_begin(manager);
+    CHECK(peer_id != _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers));
     _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
     CHECK(_z_unicast_transport_manager_close_peer(manager, peer_id, &reason, NULL) == _Z_RES_OK);
 }

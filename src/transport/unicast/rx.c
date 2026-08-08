@@ -17,7 +17,6 @@
 #include <stddef.h>
 
 #include "zenoh-pico/config.h"
-#include "zenoh-pico/link/transport/socket.h"
 #include "zenoh-pico/protocol/codec/network.h"
 #include "zenoh-pico/protocol/codec/transport.h"
 #include "zenoh-pico/protocol/core.h"
@@ -31,15 +30,15 @@
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 
-static z_result_t _z_unicast_transport_manager_handle_handshake_message(_z_unicast_transport_manager_t *manager,
-                                                                        const _z_transport_message_t *message,
-                                                                        _z_unicast_peer_slot_id_t peer_id);
+static z_result_t _z_unicast_transport_manager_handle_handshake_message(
+    _z_unicast_transport_manager_t *manager, const _z_transport_message_t *message,
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id);
 
-static z_result_t _z_unicast_transport_manager_handle_transport_message(_z_unicast_transport_manager_t *manager,
-                                                                        _z_transport_message_t *t_msg,
-                                                                        _z_unicast_peer_slot_id_t peer_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, peer_id);
-    if (_z_unicast_peer_slot_state_is_pending(manager->_peer_states[peer_id])) {
+static z_result_t _z_unicast_transport_manager_handle_transport_message(
+    _z_unicast_transport_manager_t *manager, _z_transport_message_t *t_msg,
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
+    if (_z_unicast_peer_state_is_pending(peer->_state)) {
         return _z_unicast_transport_manager_handle_handshake_message(manager, t_msg, peer_id);
     }
     peer->_received = true;
@@ -83,14 +82,6 @@ static z_result_t _z_unicast_transport_manager_handle_transport_message(_z_unica
 
 static z_result_t _z_unicast_link_recv_zbuf_stream(_z_unicast_link_t *link, _z_zbuf_t *zbf, uint16_t *msg_len) {
     size_t readable_len = _z_zbuf_readable_len(zbf);
-    if (*msg_len == 0 && readable_len >= _Z_MSG_LEN_ENC_SIZE) {
-        *msg_len = _z_transport_read_stream_size(zbf);
-        readable_len = _z_zbuf_readable_len(zbf);
-    }
-    if (*msg_len != 0 && readable_len >= *msg_len) {
-        return _Z_RES_OK;
-    }
-
     size_t part_len = *msg_len == 0 ? _Z_MSG_LEN_ENC_SIZE : *msg_len;
     size_t remaining_capacity = _z_zbuf_writable_space_left(zbf) + readable_len;
     if (remaining_capacity < part_len) {
@@ -117,17 +108,6 @@ static z_result_t _z_unicast_link_recv_zbuf_stream(_z_unicast_link_t *link, _z_z
     }
 }
 
-static z_result_t _z_unicast_pending_handshake_send(_z_unicast_transport_peer_t *peer,
-                                                    const _z_transport_message_t *message, bool complete) {
-    _z_sys_net_socket_t *socket = _z_unicast_link_get_socket(&peer->_link);
-    _Z_RETURN_IF_ERR(_z_socket_set_blocking(socket, true));
-    z_result_t ret = _z_unicast_link_send_t_msg(&peer->_link, message);
-    if (ret == _Z_RES_OK && !complete) {
-        ret = _z_socket_set_blocking(socket, false);
-    }
-    return ret;
-}
-
 static z_result_t _z_unicast_pending_handshake_resize_rx(_z_unicast_transport_peer_t *peer, size_t capacity) {
     if (_z_zbuf_capacity(&peer->_rx_buffer) == capacity) {
         return _Z_RES_OK;
@@ -143,20 +123,15 @@ static z_result_t _z_unicast_pending_handshake_resize_rx(_z_unicast_transport_pe
     return _Z_RES_OK;
 }
 
-static z_result_t _z_unicast_transport_manager_commit_pending(_z_unicast_transport_manager_t *manager,
-                                                              _z_unicast_peer_slot_id_t slot_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, slot_id);
-    z_result_t ret = _z_socket_set_blocking(_z_unicast_link_get_socket(&peer->_link), true);
-    if (ret != _Z_RES_OK) {
-        return ret;
-    }
+static z_result_t _z_unicast_transport_manager_commit_pending(
+    _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t slot_id) {
     return _z_unicast_transport_manager_establish_pending(manager, slot_id);
 }
 
-static z_result_t _z_unicast_transport_manager_handle_handshake_message(_z_unicast_transport_manager_t *manager,
-                                                                        const _z_transport_message_t *message,
-                                                                        _z_unicast_peer_slot_id_t slot_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, slot_id);
+static z_result_t _z_unicast_transport_manager_handle_handshake_message(
+    _z_unicast_transport_manager_t *manager, const _z_transport_message_t *message,
+    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id) {
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
     _z_transport_message_t output = {0};
     bool has_output = false;
     bool complete = false;
@@ -166,15 +141,15 @@ static z_result_t _z_unicast_transport_manager_handle_handshake_message(_z_unica
     if (ret != _Z_RES_OK) {
         return ret;
     }
-    _z_unicast_peer_slot_state_t previous_state = manager->_peer_states[slot_id];
-    ret = _z_unicast_handshake_on_input(peer, &manager->_peer_states[slot_id], &session->_local_zid, session->_mode,
-                                        message, &output, &has_output, &complete);
+    _z_unicast_peer_state_t previous_state = peer->_state;
+    ret = _z_unicast_handshake_handle_input(peer, &peer->_state, &session->_local_zid, session->_mode, message, &output,
+                                            &has_output, &complete);
     _z_transport_manager_unlock(manager->_parent);
     if (ret != _Z_RES_OK) {
         return ret;
     }
     if (has_output) {
-        ret = _z_unicast_pending_handshake_send(peer, &output, complete);
+        ret = _z_unicast_link_send_t_msg(&peer->_link, &output);
         if (ret != _Z_RES_OK) {
             return ret;
         }
@@ -223,16 +198,16 @@ z_result_t _z_unicast_link_recv_t_msg(_z_unicast_link_t *link, _z_transport_mess
 }
 
 static z_result_t _z_unicast_transport_peer_recv(_z_unicast_transport_manager_t *manager,
-                                                 _z_unicast_peer_slot_id_t peer_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, peer_id);
+                                                 _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
     return _z_unicast_link_is_streamed(&peer->_link)
                ? _z_unicast_link_recv_zbuf_stream(&peer->_link, &peer->_rx_buffer, &peer->_rx_msg_len)
                : _z_unicast_link_recv_zbuf_datagram(&peer->_link, &manager->_rx_buffer);
 }
 
 static z_result_t _z_unicast_transport_peer_process_messages(_z_unicast_transport_manager_t *manager,
-                                                             _z_unicast_peer_slot_id_t peer_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, peer_id);
+                                                             _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
     bool has_more_messages = true;
     uint16_t *rx_msg_len_ptr = NULL;
     _z_zbuf_t *rx_buffer = &manager->_rx_buffer;
@@ -251,9 +226,11 @@ static z_result_t _z_unicast_transport_peer_process_messages(_z_unicast_transpor
 z_result_t _z_unicast_transport_manager_read(_z_unicast_transport_manager_t *manager,
                                              const _z_ready_links_mask_bitset_t *ready_links) {
     bool has_data = false;
-    _z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_hmap_begin(&manager->_peers);
-    while (id != _z_unicast_transport_peer_hmap_end(&manager->_peers)) {
-        _z_unicast_peer_slot_id_t next = _z_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
+    _z_address_to_unicast_transport_peer_hmap_iter_t id =
+        _z_address_to_unicast_transport_peer_hmap_begin(&manager->_peers);
+    while (id != _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
+        _z_address_to_unicast_transport_peer_hmap_iter_t next =
+            _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
         if (!_z_ready_links_mask_bitset_is_unicast_peer_ready(ready_links, (size_t)id)) {
             id = next;
             continue;
@@ -273,21 +250,17 @@ z_result_t _z_unicast_transport_manager_read(_z_unicast_transport_manager_t *man
             continue;
         }
 
-        if (_z_unicast_peer_slot_state_is_pending(manager->_peer_states[id])) {
-            _z_unicast_transport_manager_abort_pending(manager, id, ret);
-        } else if (ret == Z_REMOTE_PEER_SENT_CLOSE) {
+        const _z_close_reason_t *reason = NULL;
+        _z_close_reason_t generic_reason = _Z_CLOSE_REASON_GENERIC;
+        if (ret == Z_REMOTE_PEER_SENT_CLOSE) {
             _Z_INFO("Remote peer %zu sent a CLOSE message", peer_id);
-            ret = _z_unicast_transport_manager_close_peer(manager, id, NULL, NULL);
-            if (ret != _Z_RES_OK) {
-                _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
-            }
-        } else if (ret != _Z_RES_OK) {
+        } else {
             _Z_ERROR("Failed to receive or handle data from peer %zu (err: %d)", peer_id, ret);
-            _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
-            ret = _z_unicast_transport_manager_close_peer(manager, id, &reason, NULL);
-            if (ret != _Z_RES_OK) {
-                _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
-            }
+            reason = &generic_reason;
+        }
+        ret = _z_unicast_transport_manager_close_peer(manager, id, reason, NULL);
+        if (ret != _Z_RES_OK) {
+            _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
         }
         id = next;
     }

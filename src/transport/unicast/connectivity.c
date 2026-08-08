@@ -22,9 +22,10 @@
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 #if Z_FEATURE_CONNECTIVITY == 1
 static void _z_unicast_transport_manager_report_event(_z_unicast_transport_manager_t *manager,
-                                                      _z_unicast_peer_slot_id_t peer_iter, bool is_connected) {
+                                                      _z_address_to_unicast_transport_peer_hmap_iter_t peer_iter,
+                                                      bool is_connected) {
     _z_connectivity_peer_event_data_t peer_event_data = {0};
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_at(&manager->_peers, peer_iter);
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_iter)->val;
     uint16_t mtu = _z_unicast_link_get_mtu(&peer->_link);
     bool is_streamed = _z_unicast_link_is_streamed(&peer->_link);
     bool is_reliable = _z_unicast_link_is_reliable(&peer->_link);
@@ -44,8 +45,8 @@ static void _z_unicast_transport_manager_report_event(_z_unicast_transport_manag
 }
 #endif
 
-void _z_unicast_transport_manager_report_connected_event(_z_unicast_transport_manager_t *manager,
-                                                         _z_unicast_peer_slot_id_t connected_peer_iter) {
+void _z_unicast_transport_manager_report_connected_event(
+    _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t connected_peer_iter) {
     _z_session_t *session = manager->_parent->_session;
 
     if (session->_mode == Z_WHATAMI_CLIENT) {
@@ -59,8 +60,8 @@ void _z_unicast_transport_manager_report_connected_event(_z_unicast_transport_ma
 #endif
 }
 
-void _z_unicast_transport_manager_report_disconnected_event(_z_unicast_transport_manager_t *manager,
-                                                            _z_unicast_peer_slot_id_t disconnected_peer_iter) {
+void _z_unicast_transport_manager_report_disconnected_event(
+    _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t disconnected_peer_iter) {
     _z_session_t *session = manager->_parent->_session;
     _z_interest_peer_disconnected(session, disconnected_peer_iter);
     _z_flush_remote_resources_for_peer(session, disconnected_peer_iter);
@@ -74,10 +75,9 @@ void _z_unicast_transport_manager_report_disconnected_event(_z_unicast_transport
 
 void _z_unicast_transport_manager_fetch_zid(const _z_unicast_transport_manager_t *manager, _z_closure_zid_t *callback,
                                             z_what_t filter) {
-    for (_z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_established_begin(manager);
-         id != _z_unicast_transport_peer_hmap_end(&manager->_peers);
-         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
-        const _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_const_at(&manager->_peers, id);
+    const _z_unicast_transport_peer_t *peer;
+    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         if (((z_what_t)peer->_remote_whatami & filter) != 0) {
             (*callback->call)(&peer->_remote_zid, callback->context);
         }
@@ -85,24 +85,18 @@ void _z_unicast_transport_manager_fetch_zid(const _z_unicast_transport_manager_t
 }
 
 bool _z_unicast_transport_manager_has_peer_with_zid(const _z_unicast_transport_manager_t *manager, const _z_id_t *zid) {
-    for (_z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_established_begin(manager);
-         id != _z_unicast_transport_peer_hmap_end(&manager->_peers);
-         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
-        const _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_const_at(&manager->_peers, id);
-        if (_z_id_eq(&peer->_remote_zid, zid)) {
-            return true;
-        }
-    }
-    return false;
+    const _z_unicast_transport_peer_t *peer;
+    _ZP_CONST_FIND_VAL(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                       _->_state == _Z_UNICAST_PEER_ESTABLISHED && _z_id_eq(&_->_remote_zid, zid));
+    return peer != NULL;
 }
 
 #if Z_FEATURE_CONNECTIVITY == 1
 void _z_unicast_transport_manager_fetch_transports(const _z_unicast_transport_manager_t *manager,
                                                    z_closure_transport_callback_t call, void *arg) {
-    for (_z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_established_begin(manager);
-         id != _z_unicast_transport_peer_hmap_end(&manager->_peers);
-         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
-        const _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_const_at(&manager->_peers, id);
+    const _z_unicast_transport_peer_t *peer;
+    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         _z_info_transport_t transport = {0};
         transport._zid = peer->_remote_zid;
         transport._whatami = (z_whatami_t)peer->_remote_whatami;
@@ -116,10 +110,9 @@ void _z_unicast_transport_manager_fetch_transports(const _z_unicast_transport_ma
 void _z_unicast_transport_manager_fetch_links(const _z_unicast_transport_manager_t *manager,
                                               z_closure_link_callback_t call, void *arg,
                                               const _z_info_transport_t *opt_transport_filter) {
-    for (_z_unicast_peer_slot_id_t id = _z_unicast_transport_peer_established_begin(manager);
-         id != _z_unicast_transport_peer_hmap_end(&manager->_peers);
-         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
-        const _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_const_at(&manager->_peers, id);
+    const _z_unicast_transport_peer_t *peer;
+    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         if (opt_transport_filter != NULL &&
             (opt_transport_filter->_is_multicast || !_z_id_eq(&peer->_remote_zid, &opt_transport_filter->_zid))) {
             continue;

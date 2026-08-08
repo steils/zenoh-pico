@@ -33,6 +33,21 @@
          (var_name = transform(collection_name##_const_at(collection_ptr, _ZP_CAT(var_name, iter))), true); \
          _ZP_CAT(var_name, iter) = collection_name##_iter_next(collection_ptr, _ZP_CAT(var_name, iter)))
 
+#define _ZP_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, transform, predicate)            \
+    for (collection_name##_iter_t _ZP_CAT(var_name, iter) = collection_name##_begin(collection_ptr);               \
+         _ZP_CAT(var_name, iter) != collection_name##_end(collection_ptr);                                         \
+         _ZP_CAT(var_name, iter) = collection_name##_iter_next(collection_ptr, _ZP_CAT(var_name, iter)))           \
+        if ((var_name = transform(collection_name##_at(collection_ptr, _ZP_CAT(var_name, iter))), !(predicate))) { \
+        } else
+
+#define _ZP_CONST_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, transform, predicate) \
+    for (collection_name##_iter_t _ZP_CAT(var_name, iter) = collection_name##_begin(collection_ptr);          \
+         _ZP_CAT(var_name, iter) != collection_name##_end(collection_ptr);                                    \
+         _ZP_CAT(var_name, iter) = collection_name##_iter_next(collection_ptr, _ZP_CAT(var_name, iter)))      \
+        if ((var_name = transform(collection_name##_const_at(collection_ptr, _ZP_CAT(var_name, iter))),       \
+             !(predicate))) {                                                                                 \
+        } else
+
 // For loop over collection iterators. iter_name is a collection_name_iter_t variable which is automatically declared
 // inside the loop.
 #define _ZP_IT_FOREACH(collection_name, collection_ptr, iter_name)                     \
@@ -145,6 +160,13 @@
 // the loop. In addition a collection_name_iter_t variable named var_name_iter is declared and used as the iterator.
 #define _ZP_CONST_FOREACH_VAL(collection_name, collection_ptr, var_name) \
     _ZP_CONST_FOREACH_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_VAL)
+
+// For loop over hash-map values matching predicate. var_name is assigned before predicate is evaluated.
+#define _ZP_FOREACH_VAL_FILTERED(collection_name, collection_ptr, var_name, predicate) \
+    _ZP_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_VAL, predicate)
+// Const counterpart of _ZP_FOREACH_VAL_FILTERED.
+#define _ZP_CONST_FOREACH_VAL_FILTERED(collection_name, collection_ptr, var_name, predicate) \
+    _ZP_CONST_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_VAL, predicate)
 
 // Remove all elements matching predicate. Behaviour is undefined if predicate has side effects that modify the
 // collection.

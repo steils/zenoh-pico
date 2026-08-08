@@ -123,6 +123,7 @@ _z_fut_fn_result_t _z_transport_manager_connect_task_fn(void *transport_manager,
 
 void _z_transport_manager_signal_opened_peer(_z_transport_manager_t *manager, _z_connect_peer_id_t locator_id);
 void _z_transport_manager_signal_closed_peer(_z_transport_manager_t *manager, _z_connect_peer_id_t locator_id);
+void _z_transport_manager_signal_pending_peer(_z_transport_manager_t *manager);
 
 #if Z_FEATURE_CONNECTIVITY == 1
 typedef struct {

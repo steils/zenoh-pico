@@ -274,6 +274,15 @@ _z_fut_fn_result_t _z_transport_manager_read_task_fn(void *transport_manager, _z
     return _z_fut_fn_result_continue();
 }
 
+void _z_transport_manager_signal_pending_peer(_z_transport_manager_t *manager) {
+    if (!_z_fut_handle_is_null(manager->_lease_task)) {
+        _z_runtime_resume_suspended_or_wakeup_sleeping_fut(&manager->_session->_runtime, &manager->_lease_task);
+    }
+    if (!_z_fut_handle_is_null(manager->_read_task)) {
+        _z_runtime_resume_suspended_or_wakeup_sleeping_fut(&manager->_session->_runtime, &manager->_read_task);
+    }
+}
+
 void _z_transport_manager_signal_closed_peer(_z_transport_manager_t *manager, _z_connect_peer_id_t locator_id) {
 #if Z_FEATURE_UNICAST_PEER == 1 || Z_FEATURE_AUTO_RECONNECT == 1
     if (locator_id < Z_MAX_NUM_UNICAST_PEERS) {
@@ -314,9 +323,8 @@ _z_fut_fn_result_t _z_transport_manager_connect_task_fn(void *transport_manager,
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
     uint32_t next_wake_up_time_ms = 0;
     _z_transport_manager_t *manager = (_z_transport_manager_t *)transport_manager;
-    bool client_has_transport = _z_transport_manager_get_peers_count(manager) > 0;
-    client_has_transport = client_has_transport || _z_unicast_transport_manager_has_pending_open(&manager->_unicast);
-    if (manager->_session->_mode == Z_WHATAMI_CLIENT && (Z_FEATURE_AUTO_RECONNECT == 0 || client_has_transport)) {
+    if (manager->_session->_mode == Z_WHATAMI_CLIENT &&
+        (Z_FEATURE_AUTO_RECONNECT == 0 || _z_unicast_transport_manager_get_readers_count(&manager->_unicast) > 0)) {
         return _z_fut_fn_result_suspend();
     }
     if (_z_config_connect_vec_is_empty(&manager->_session->_config._connect)) {
