@@ -68,29 +68,18 @@ _z_address_to_unicast_transport_peer_hmap_iter_t _z_unicast_transport_peer_estab
 size_t _z_unicast_transport_peer_established_count(const _z_unicast_transport_manager_t *manager) {
     size_t count = 0;
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         count++;
     }
     return count;
 }
 
-// The caller holds the transport-manager lock, so the counter and map lookup
-// form one atomic key-allocation operation.
-static _z_link_address_t _z_unicast_transport_manager_next_peer_key(_z_unicast_transport_manager_t *manager) {
-    _z_link_address_t key;
-    do {
-        key = _z_unicast_peer_key_numeric(manager->_next_numeric_peer_id++);
-    } while (_z_address_to_unicast_transport_peer_hmap_get_iter(&manager->_peers, &key) !=
-             _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers));
-    return key;
-}
-
 size_t _z_unicast_transport_manager_get_pending_count(const _z_unicast_transport_manager_t *manager) {
     size_t count = 0;
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   _z_unicast_peer_state_is_pending(peer->_state)) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    _z_unicast_peer_state_is_pending(peer->_state)) {
         count++;
     }
     return count;
@@ -141,7 +130,7 @@ static z_result_t _z_unicast_transport_manager_start_pending(_z_unicast_transpor
 
     peer._link = *link;
     peer._state = state;
-    _z_link_address_t key = _z_unicast_transport_manager_next_peer_key(manager);
+    _z_link_address_t key = _z_unicast_peer_key_numeric(manager->_next_numeric_peer_id++);
     _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
         _z_address_to_unicast_transport_peer_hmap_insert(&manager->_peers, &key, &peer);
     if (slot_id == _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
@@ -293,9 +282,6 @@ static void _z_unicast_transport_manager_report_added_peer(_z_unicast_transport_
 
 z_result_t _z_unicast_transport_manager_establish_pending(_z_unicast_transport_manager_t *manager,
                                                           _z_address_to_unicast_transport_peer_hmap_iter_t id) {
-    if (!_z_address_to_unicast_transport_peer_hmap_iter_is_valid(&manager->_peers, id)) {
-        return _Z_ERR_INVALID;
-    }
     _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, id)->val;
     if (!_z_unicast_peer_state_is_pending(peer->_state)) {
         return _Z_ERR_INVALID;
@@ -352,7 +338,7 @@ static z_result_t _z_unicast_transport_manager_add_peer_inner(_z_unicast_transpo
     peer->_rx_buffer = rx_buffer;
     peer->_locator_id = locator_id;
     peer->_state = _Z_UNICAST_PEER_ESTABLISHED;
-    _z_link_address_t key = _z_unicast_transport_manager_next_peer_key(manager);
+    _z_link_address_t key = _z_unicast_peer_key_numeric(manager->_next_numeric_peer_id++);
     _z_address_to_unicast_transport_peer_hmap_iter_t id =
         _z_address_to_unicast_transport_peer_hmap_insert(&manager->_peers, &key, peer);
     if (id == _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
@@ -724,9 +710,6 @@ z_result_t _z_unicast_transport_manager_close_peer(_z_unicast_transport_manager_
                                                    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id,
                                                    const _z_close_reason_t *opt_reason,
                                                    _z_address_to_unicast_transport_peer_hmap_iter_t *opt_next_peer_id) {
-    if (!_z_address_to_unicast_transport_peer_hmap_iter_is_valid(&manager->_peers, peer_id)) {
-        return _Z_ERR_INVALID;
-    }
     _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
     bool pending = _z_unicast_peer_state_is_pending(peer->_state);
     if (pending) {

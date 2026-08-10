@@ -297,24 +297,6 @@ static void test_iteration_visits_all(void) {
     u32map_destroy(&m);
 }
 
-static void test_iter_is_valid(void) {
-    printf("Test: iterator validity tracks live slots\n");
-    u32map_t m = u32map_new();
-    assert(!u32map_iter_is_valid(&m, u32map_end(&m)));
-
-    uint32_t k1 = 1, v1 = 10;
-    uint32_t k2 = 2, v2 = 20;
-    u32map_iter_t first = u32map_insert(&m, &k1, &v1);
-    u32map_iter_t second = u32map_insert(&m, &k2, &v2);
-    assert(u32map_iter_is_valid(&m, first));
-    assert(u32map_iter_is_valid(&m, second));
-
-    u32map_remove_at(&m, first, NULL, NULL);
-    assert(!u32map_iter_is_valid(&m, first));
-    assert(u32map_iter_is_valid(&m, second));
-    u32map_destroy(&m);
-}
-
 static void test_iteration_removal_pattern(void) {
     printf("Test: safe removal of even keys during iteration\n");
     u32map_t m = u32map_new();
@@ -617,6 +599,31 @@ static void test_algorithms_foreach_val(void) {
     u32map_destroy(&m);
 }
 
+static void test_algorithms_foreach_filtered(void) {
+    printf("Test: filtered element iteration visits only matching entries\n");
+    u32map_t m = u32map_new();
+    for (uint32_t i = 1; i <= 6; i++) {
+        uint32_t k = i, v = i;
+        assert(u32map_insert(&m, &k, &v) != u32map_end(&m));
+    }
+
+    u32map_elem_t *elem = NULL;
+    size_t count = 0;
+    _ZP_FOREACH_FILTERED (u32map, &m, elem, elem->key % 2 == 0) {
+        elem->val += 10;
+        count++;
+    }
+    assert(count == 3);
+
+    const u32map_elem_t *const_elem = NULL;
+    uint32_t sum = 0;
+    _ZP_CONST_FOREACH_FILTERED (u32map, &m, const_elem, const_elem->val > 10) {
+        sum += const_elem->val;
+    }
+    assert(sum == 42);
+    u32map_destroy(&m);
+}
+
 static void test_algorithms_foreach_val_filtered(void) {
     printf("Test: filtered value iteration visits only matching values\n");
     u32map_t m = u32map_new();
@@ -627,7 +634,7 @@ static void test_algorithms_foreach_val_filtered(void) {
 
     uint32_t *val = NULL;
     size_t count = 0;
-    _ZP_FOREACH_VAL_FILTERED(u32map, &m, val, *val % 2 == 0) {
+    _ZP_FOREACH_VAL_FILTERED (u32map, &m, val, *val % 2 == 0) {
         *val += 10;
         count++;
     }
@@ -635,7 +642,9 @@ static void test_algorithms_foreach_val_filtered(void) {
 
     const uint32_t *const_val = NULL;
     uint32_t sum = 0;
-    _ZP_CONST_FOREACH_VAL_FILTERED(u32map, &m, const_val, *const_val > 10) { sum += *const_val; }
+    _ZP_CONST_FOREACH_VAL_FILTERED (u32map, &m, const_val, *const_val > 10) {
+        sum += *const_val;
+    }
     assert(sum == 42);
     u32map_destroy(&m);
 }
@@ -896,7 +905,6 @@ int main(void) {
     test_clear_and_reuse();
     test_remove_head_and_tail_of_chain();
     test_iteration_visits_all();
-    test_iter_is_valid();
     test_iteration_removal_pattern();
     test_remove_at_moves_value_out();
     test_small_index_type_growth();
@@ -906,6 +914,7 @@ int main(void) {
     test_partial_fill_grow_preserves_free_list();
     test_algorithms_foreach();
     test_algorithms_cforeach();
+    test_algorithms_foreach_filtered();
     test_algorithms_foreach_val();
     test_algorithms_foreach_val_filtered();
     test_algorithms_find();

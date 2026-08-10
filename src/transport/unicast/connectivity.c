@@ -76,8 +76,8 @@ void _z_unicast_transport_manager_report_disconnected_event(
 void _z_unicast_transport_manager_fetch_zid(const _z_unicast_transport_manager_t *manager, _z_closure_zid_t *callback,
                                             z_what_t filter) {
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         if (((z_what_t)peer->_remote_whatami & filter) != 0) {
             (*callback->call)(&peer->_remote_zid, callback->context);
         }
@@ -95,8 +95,8 @@ bool _z_unicast_transport_manager_has_peer_with_zid(const _z_unicast_transport_m
 void _z_unicast_transport_manager_fetch_transports(const _z_unicast_transport_manager_t *manager,
                                                    z_closure_transport_callback_t call, void *arg) {
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         _z_info_transport_t transport = {0};
         transport._zid = peer->_remote_zid;
         transport._whatami = (z_whatami_t)peer->_remote_whatami;
@@ -111,8 +111,8 @@ void _z_unicast_transport_manager_fetch_links(const _z_unicast_transport_manager
                                               z_closure_link_callback_t call, void *arg,
                                               const _z_info_transport_t *opt_transport_filter) {
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         if (opt_transport_filter != NULL &&
             (opt_transport_filter->_is_multicast || !_z_id_eq(&peer->_remote_zid, &opt_transport_filter->_zid))) {
             continue;

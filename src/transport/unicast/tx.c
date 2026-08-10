@@ -45,20 +45,6 @@ z_result_t _z_unicast_link_send_t_msg(_z_unicast_link_t *link, const _z_transpor
     return ret;
 }
 
-static _z_unicast_transport_peer_t *_z_unicast_transport_manager_get_established_peer(
-    _z_unicast_transport_manager_t *manager, size_t peer_id) {
-    if (peer_id >= Z_MAX_NUM_UNICAST_PEERS) {
-        return NULL;
-    }
-    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
-        (_z_address_to_unicast_transport_peer_hmap_iter_t)peer_id;
-    if (!_z_address_to_unicast_transport_peer_hmap_iter_is_valid(&manager->_peers, slot_id)) {
-        return NULL;
-    }
-    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
-    return peer->_state == _Z_UNICAST_PEER_ESTABLISHED ? peer : NULL;
-}
-
 static z_result_t _z_unicast_transport_peer_flush_buffer(_z_unicast_transport_peer_t *peer, _z_wbuf_t *wbuf) {
     _z_wbuf_finalize(wbuf, _z_unicast_link_is_streamed(&peer->_link));
     z_result_t ret = _Z_RES_OK;
@@ -113,10 +99,9 @@ z_result_t _z_unicast_transport_manager_send_n_msg_to_peer(_z_unicast_transport_
                                                            const _z_network_message_t *msg, z_reliability_t reliability,
                                                            size_t peer_id) {
     _Z_DEBUG("Send network message (%d) over unicast to peer %zu", msg->_tag, peer_id);
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_manager_get_established_peer(manager, peer_id);
-    if (peer == NULL) {
-        return _Z_ERR_INVALID;
-    }
+    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
+        (_z_address_to_unicast_transport_peer_hmap_iter_t)peer_id;
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
     _z_zint_t *sn = _z_sn_get(&peer->_sn_tx, reliability);
 #if Z_FEATURE_BATCHING == 0
     _z_wbuf_t *tx_buf = &manager->_parent->_tx_buffer;
@@ -173,7 +158,7 @@ z_result_t _z_unicast_transport_manager_send_n_msg(_z_unicast_transport_manager_
     if (_z_destination_filter_is_what(&dest_filter)) {
         z_what_t what = *_z_destination_filter_get_what(&dest_filter);
         _z_unicast_transport_peer_t *peer;
-        _ZP_FOREACH_VAL_FILTERED(
+        _ZP_FOREACH_VAL_FILTERED (
             _z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
             peer->_state == _Z_UNICAST_PEER_ESTABLISHED && ((z_what_t)peer->_remote_whatami & what) != 0) {
             ret = _z_unicast_transport_manager_send_n_msg_to_peer(manager, msg, reliability, (size_t)peer_iter);
@@ -205,10 +190,9 @@ z_result_t _z_unicast_transport_manager_send_n_msg(_z_unicast_transport_manager_
 
 z_result_t _z_unicast_transport_manager_send_t_msg_to_peer(_z_unicast_transport_manager_t *manager,
                                                            const _z_transport_message_t *t_msg, size_t peer_id) {
-    _z_unicast_transport_peer_t *peer = _z_unicast_transport_manager_get_established_peer(manager, peer_id);
-    if (peer == NULL) {
-        return _Z_ERR_INVALID;
-    }
+    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
+        (_z_address_to_unicast_transport_peer_hmap_iter_t)peer_id;
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
     _Z_DEBUG("Send transport message on transport unicast");
 #if Z_FEATURE_BATCHING == 0
     _z_wbuf_t *tx_buf = &manager->_parent->_tx_buffer;
@@ -229,8 +213,8 @@ z_result_t _z_unicast_transport_manager_send_t_msg_to_peer(_z_unicast_transport_
 z_result_t _z_unicast_transport_manager_send_n_batch(_z_unicast_transport_manager_t *manager) {
     z_result_t res = _Z_RES_OK;
     _z_unicast_transport_peer_t *peer;
-    _ZP_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                             peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                              peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         if (_z_wbuf_len(&peer->_tx_buffer) > 0) {
             z_result_t ret = _z_unicast_transport_peer_flush_buffer(peer, &peer->_tx_buffer);
             if (ret != _Z_RES_OK) {

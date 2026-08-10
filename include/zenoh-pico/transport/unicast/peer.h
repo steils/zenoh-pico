@@ -30,7 +30,7 @@ extern "C" {
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 typedef uint8_t _z_unicast_peer_state_t;
-enum {
+enum _z_unicast_peer_state {
     _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK,
     _Z_UNICAST_HS_OPEN_WAIT_OPEN_ACK,
     _Z_UNICAST_HS_ACCEPT_WAIT_INIT,

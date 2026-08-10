@@ -45,7 +45,7 @@ typedef enum {
     _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT,
 } _z_unicast_handshake_role_t;
 
-static inline _z_link_address_t _z_unicast_peer_key_numeric(uint32_t id) {
+static inline _z_link_address_t _z_unicast_peer_key_numeric(uint64_t id) {
     _z_link_address_t key = _z_link_address_new();
     (void)_z_link_address_append(&key, (const uint8_t *)&id, sizeof(id));
     return key;
@@ -96,7 +96,7 @@ typedef struct _z_unicast_transport_manager_t {
 #endif
     _z_transport_manager_t *_parent;  // non-owning pointer to the global transport manager
     _z_address_to_unicast_transport_peer_hmap_t _peers;
-    uint32_t _next_numeric_peer_id;
+    uint64_t _next_numeric_peer_id;
     _z_unicast_lease_pqueue_t _lease_pqueue;
     _z_zbuf_t _rx_buffer;  // a common buffer used for incoming messages on datagram links, to be shared among all peers
 #if Z_FEATURE_UNICAST_PEER == 1

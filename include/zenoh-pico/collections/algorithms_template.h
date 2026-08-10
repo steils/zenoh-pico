@@ -65,6 +65,13 @@
 #define _ZP_CONST_FOREACH(collection_name, collection_ptr, var_name) \
     _ZP_CONST_FOREACH_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_IDENTITY)
 
+// For loop over collection elements matching predicate. var_name is assigned before predicate is evaluated.
+#define _ZP_FOREACH_FILTERED(collection_name, collection_ptr, var_name, predicate) \
+    _ZP_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_IDENTITY, predicate)
+// Const counterpart of _ZP_FOREACH_FILTERED
+#define _ZP_CONST_FOREACH_FILTERED(collection_name, collection_ptr, var_name, predicate) \
+    _ZP_CONST_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_IDENTITY, predicate)
+
 // Find first element matching predicate.  var_name is a pointer to the element type which should be declared by
 // user before the loop. It is set to NULL if no matching element is found
 #define _ZP_FIND(collection_name, collection_ptr, var_name, predicate)                     \

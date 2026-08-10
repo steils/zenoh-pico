@@ -41,8 +41,8 @@ z_result_t _z_unicast_transport_manager_encode_locators_json(const _z_unicast_tr
 z_result_t _z_unicast_transport_manager_encode_transports_json(const _z_unicast_transport_manager_t *manager,
                                                                _z_json_encoder_t *je) {
     const _z_unicast_transport_peer_t *peer;
-    _ZP_CONST_FOREACH_VAL_FILTERED(_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                   peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         _Z_RETURN_IF_ERR(_z_json_encoder_start_object(je));
 
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "peer"));

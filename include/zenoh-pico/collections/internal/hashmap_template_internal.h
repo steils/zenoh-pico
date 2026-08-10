@@ -727,19 +727,6 @@ static inline _ZP_HASHMAP_TEMPLATE_ITER_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME,
     return _ZP_HASHMAP_TEMPLATE_INDEX_NONE;
 }
 
-// Returns true if pos identifies a live entry in the map
-static inline bool _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, iter_is_valid)(const _ZP_HASHMAP_TEMPLATE_TYPE *map,
-                                                                     _ZP_HASHMAP_TEMPLATE_ITER_TYPE pos) {
-#ifdef _ZP_HASHMAP_TEMPLATE_IS_STATIC
-    if ((size_t)pos >= _ZP_HASHMAP_TEMPLATE_CAPACITY) {
-#else
-    if ((size_t)pos >= map->_capacity) {
-#endif
-        return false;
-    }
-    return map->_slots[pos]._prev_live != _ZP_HASHMAP_TEMPLATE_INDEX_NONE || map->_live_head == pos;
-}
-
 // ── remove_at ────────────────────────────────────────────────────────────────
 // Remove the node at the given iterator (obtained from insert or a prior
 // lookup).  Behaviour is undefined if iterator is invalid or has already been
