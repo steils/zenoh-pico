@@ -140,10 +140,26 @@ ifndef DOCKER_OK
 endif
 
 crossbuild: check-docker
-	@echo "FROM dockcross/$(CROSSIMG)\nRUN apt-get update && apt-get -y install rpm" | docker build -t $(CROSSIMG_PREFIX)$(CROSSIMG) -
-	docker run --rm -v $(ROOT_DIR):/workdir -w /workdir $(CROSSIMG_PREFIX)$(CROSSIMG) bash -c "\
-		cmake $(CMAKE_OPT) -DCPACK_PACKAGE_NAME=$(PACKAGE_NAME) -DPACKAGING=DEB,RPM -DDEBARCH=$(DEBARCH) -DRPMARCH=$(RPMARCH) -B$(CROSSBUILD_DIR)/$(CROSSIMG) && \
-		make VERBOSE=1 -C$(CROSSBUILD_DIR)/$(CROSSIMG) all package"
+	@CACHE_ARGS=""; \
+	if [ -n "$$ACTIONS_CACHE_URL" ] && [ -n "$$ACTIONS_RUNTIME_TOKEN" ] && [ -n "$$ACTIONS_RUNTIME_URL" ]; then \
+		CACHE_ARGS="--cache-from type=gha,scope=$(CROSSIMG),version=2 --cache-to type=gha,scope=$(CROSSIMG),mode=max,version=2"; \
+	fi; \
+	printf 'FROM dockcross/%s\nRUN apt-get update && apt-get -y install rpm\n' "$(CROSSIMG)" | \
+		docker buildx build --progress=plain $$CACHE_ARGS --tag $(CROSSIMG_PREFIX)$(CROSSIMG) --load -
+	docker run --rm \
+		-v $(ROOT_DIR):/workdir \
+		-w /workdir \
+		$(CROSSIMG_PREFIX)$(CROSSIMG) \
+		bash -c "\
+		cmake $(CMAKE_OPT) \
+		-DCPACK_PACKAGE_NAME=$(PACKAGE_NAME) \
+		-DPACKAGING=DEB,RPM \
+		-DDEBARCH=$(DEBARCH) \
+		-DRPMARCH=$(RPMARCH) \
+		-B$(CROSSBUILD_DIR)/$(CROSSIMG) && \
+		make VERBOSE=1 \
+		-C$(CROSSBUILD_DIR)/$(CROSSIMG) \
+		all package"
 	docker rmi $(CROSSIMG_PREFIX)$(CROSSIMG)
 
 linux-armv5:

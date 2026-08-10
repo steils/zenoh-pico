@@ -42,6 +42,21 @@ jobs:
     runs-on: ubuntu-runner-set
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          driver: docker-container
+
+      - name: Verify runtime cache credentials
+        shell: bash
+        run: |
+          test -n "$ACTIONS_RUNTIME_TOKEN"
+          test -n "$ACTIONS_CACHE_URL"
+          test -n "$ACTIONS_RUNTIME_URL"
+          echo "GitHub Actions cache runtime is available"
+
       - name: Crosscompile debug
         run: make crossbuilds
         env:

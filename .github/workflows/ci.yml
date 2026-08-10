@@ -21,7 +21,7 @@ on:
       - "release/*"
       - "!release/dry-run/*"
   pull_request:
-      types: [ready_for_review]
+    types: [ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -646,8 +646,7 @@ jobs:
 
   connection_restore_test:
     name: Connection restore test
-    # Connection restore test requires iptables which doesn't work well within a k8s pod
-    runs-on: [self-hosted, ubuntu-latest]
+    runs-on: ubuntu-runner-set
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
