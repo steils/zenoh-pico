@@ -65,7 +65,8 @@
 #define _ZP_CONST_FOREACH(collection_name, collection_ptr, var_name) \
     _ZP_CONST_FOREACH_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_IDENTITY)
 
-// For loop over collection elements matching predicate. var_name is assigned before predicate is evaluated.
+// For loop over collection elements matching predicate. The predicate is evaluated with var_name bound to the current
+// element.
 #define _ZP_FOREACH_FILTERED(collection_name, collection_ptr, var_name, predicate) \
     _ZP_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_IDENTITY, predicate)
 // Const counterpart of _ZP_FOREACH_FILTERED
@@ -168,7 +169,8 @@
 #define _ZP_CONST_FOREACH_VAL(collection_name, collection_ptr, var_name) \
     _ZP_CONST_FOREACH_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_VAL)
 
-// For loop over hash-map values matching predicate. var_name is assigned before predicate is evaluated.
+// For loop over hash-map values matching predicate. The predicate is evaluated with var_name bound to the current
+// value.
 #define _ZP_FOREACH_VAL_FILTERED(collection_name, collection_ptr, var_name, predicate) \
     _ZP_FOREACH_FILTERED_TRANSFORM(collection_name, collection_ptr, var_name, _ZP_TRANSFORM_VAL, predicate)
 // Const counterpart of _ZP_FOREACH_VAL_FILTERED.

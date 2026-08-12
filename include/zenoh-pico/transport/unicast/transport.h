@@ -40,11 +40,6 @@ extern "C" {
 
 typedef struct _z_transport_manager_t _z_transport_manager_t;
 
-typedef enum {
-    _Z_UNICAST_HANDSHAKE_ROLE_OPEN,
-    _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT,
-} _z_unicast_handshake_role_t;
-
 static inline _z_link_address_t _z_unicast_peer_key_numeric(uint64_t id) {
     _z_link_address_t key = _z_link_address_new();
     (void)_z_link_address_append(&key, (const uint8_t *)&id, sizeof(id));
@@ -59,10 +54,6 @@ static inline _z_link_address_t _z_unicast_peer_key_numeric(uint64_t id) {
 #define _ZP_STATIC_HASHMAP_TEMPLATE_CAPACITY Z_MAX_NUM_UNICAST_PEERS
 #define _ZP_STATIC_HASHMAP_TEMPLATE_VAL_DESTROY_FN _z_unicast_transport_peer_clear
 #include "zenoh-pico/collections/static_hashmap_template.h"
-
-static inline bool _z_unicast_peer_state_is_pending(_z_unicast_peer_state_t state) {
-    return state != _Z_UNICAST_PEER_ESTABLISHED;
-}
 
 static inline bool _z_unicast_handshake_state_is_open(_z_unicast_peer_state_t state) {
     return state == _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK || state == _Z_UNICAST_HS_OPEN_WAIT_OPEN_ACK;
@@ -105,30 +96,12 @@ typedef struct _z_unicast_transport_manager_t {
 #endif
 } _z_unicast_transport_manager_t;
 
-_z_address_to_unicast_transport_peer_hmap_iter_t _z_unicast_transport_peer_established_iter_next(
-    const _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t id);
-_z_address_to_unicast_transport_peer_hmap_iter_t _z_unicast_transport_peer_established_begin(
-    const _z_unicast_transport_manager_t *manager);
 size_t _z_unicast_transport_peer_established_count(const _z_unicast_transport_manager_t *manager);
 
-void _z_unicast_handshake_start_open(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                     uint16_t batch_size, const _z_id_t *local_zid, z_whatami_t mode,
-                                     _z_transport_message_t *output);
-void _z_unicast_handshake_start_accept(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                       z_whatami_t mode);
 z_result_t _z_unicast_handshake_handle_input(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                             const _z_id_t *local_zid, z_whatami_t local_whatami,
-                                             const _z_transport_message_t *input, _z_transport_message_t *output,
-                                             bool *has_output, bool *complete);
-
-typedef z_result_t (*_z_unicast_handshake_send_f)(void *context, const _z_transport_message_t *message);
-typedef z_result_t (*_z_unicast_handshake_recv_f)(void *context, _z_transport_message_t *message, _z_zbuf_t *zbuf,
-                                                  z_clock_t deadline);
-
-z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, void *io_context,
-                                           _z_unicast_handshake_send_f send_f, _z_unicast_handshake_recv_f recv_f,
-                                           uint16_t batch_size, const _z_id_t *local_zid, z_whatami_t mode,
-                                           _z_unicast_handshake_role_t role, _z_zbuf_t *opt_rx_leftover);
+                                             _z_unicast_link_t *link, const _z_id_t *local_zid,
+                                             z_whatami_t local_whatami, const _z_transport_message_t *input,
+                                             bool *complete);
 
 z_result_t _z_unicast_transport_manager_create(_z_unicast_transport_manager_t *manager, _z_transport_manager_t *parent);
 z_result_t _z_unicast_transport_manager_spawn_tasks(_z_unicast_transport_manager_t *manager);

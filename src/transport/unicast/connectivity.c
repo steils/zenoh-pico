@@ -33,7 +33,7 @@ static void _z_unicast_transport_manager_report_event(_z_unicast_transport_manag
     peer_event_data._remote_zid = peer->_remote_zid;
     peer_event_data._remote_whatami = (z_whatami_t)peer->_remote_whatami;
     _z_unicast_transport_peer_src_dst_address_t address;
-    _z_unicast_transport_peer_src_dst_address_get(&peer->_link, &address);
+    _z_unicast_transport_peer_src_dst_address_get(peer, &address);
     peer_event_data._link_src = address.src;
     peer_event_data._link_dst = address.dst;
 
@@ -50,7 +50,9 @@ void _z_unicast_transport_manager_report_connected_event(
     _z_session_t *session = manager->_parent->_session;
 
     if (session->_mode == Z_WHATAMI_CLIENT) {
+#if Z_FEATURE_AUTO_RECONNECT == 1
         _z_interest_resend_client_declarations(session);
+#endif
     } else {
         _z_interest_push_declarations_to_peer(session, connected_peer_iter);
     }
@@ -124,7 +126,7 @@ void _z_unicast_transport_manager_fetch_links(const _z_unicast_transport_manager
         link._zid = peer->_remote_zid;
         link._mcast_group = _z_string_null();
         _z_unicast_transport_peer_src_dst_address_t address;
-        _z_unicast_transport_peer_src_dst_address_get(&peer->_link, &address);
+        _z_unicast_transport_peer_src_dst_address_get(peer, &address);
         link._src = _z_string_alias(*_z_string_view_deref(&address.src));
         link._dst = _z_string_alias(*_z_string_view_deref(&address.dst));
         call(&link, arg);

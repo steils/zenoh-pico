@@ -19,6 +19,7 @@
 #include <stdlib.h>
 
 #include "zenoh-pico.h"
+#include "zenoh-pico/collections/algorithms_template.h"
 #include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/link/unicast_link.h"
 #include "zenoh-pico/net/session.h"
@@ -80,6 +81,19 @@ static size_t active_slot_count(z_owned_session_t *session) {
     return count;
 }
 
+static _z_address_to_unicast_transport_peer_hmap_iter_t first_established_peer(
+    const _z_unicast_transport_manager_t *manager) {
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id =
+        _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers);
+    const _z_unicast_transport_peer_t *peer;
+    _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
+                                    peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
+        peer_id = peer_iter;
+        break;
+    }
+    return peer_id;
+}
+
 static _z_id_t make_id(uint8_t value) {
     _z_id_t id = _z_id_empty();
     id.id[0] = value;
@@ -125,7 +139,7 @@ static void close_all_peers(z_owned_session_t *session) {
     CHECK(_z_background_executor_suspend(&inner->_runtime) == _Z_RES_OK);
     _z_unicast_transport_manager_t *manager = &inner->_transport_manager._unicast;
     while (_z_unicast_transport_manager_get_peers_count(manager) > 0) {
-        _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = _z_unicast_transport_peer_established_begin(manager);
+        _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = first_established_peer(manager);
         CHECK(_z_unicast_transport_manager_close_peer(manager, peer_id, NULL, NULL) == _Z_RES_OK);
     }
     CHECK(_z_background_executor_resume(&inner->_runtime) == _Z_RES_OK);
@@ -138,10 +152,8 @@ static void test_two_socket_handshakes_progress(z_owned_session_t *server, const
     CHECK(wait_for_count(pending_count, server, 2, 1000));
     CHECK(active_slot_count(server) == 2);
 
-    _z_transport_message_t first_init =
-        _z_t_msg_make_init_syn(Z_WHATAMI_CLIENT, make_id(31), Z_BATCH_UNICAST_SIZE);
-    _z_transport_message_t second_init =
-        _z_t_msg_make_init_syn(Z_WHATAMI_CLIENT, make_id(32), Z_BATCH_UNICAST_SIZE);
+    _z_transport_message_t first_init = _z_t_msg_make_init_syn(Z_WHATAMI_CLIENT, make_id(31), Z_BATCH_UNICAST_SIZE);
+    _z_transport_message_t second_init = _z_t_msg_make_init_syn(Z_WHATAMI_CLIENT, make_id(32), Z_BATCH_UNICAST_SIZE);
     CHECK(_z_unicast_link_send_t_msg(&first, &first_init) == _Z_RES_OK);
     CHECK(_z_unicast_link_send_t_msg(&second, &second_init) == _Z_RES_OK);
 
@@ -206,15 +218,17 @@ static z_owned_session_t open_client(const char *locator) {
     return client;
 }
 
+#if Z_FEATURE_AUTO_RECONNECT == 1
 static void close_first_peer_and_keep_executor_suspended(z_owned_session_t *session) {
     _z_session_t *inner = _Z_OWNED_RC_IN_VAL(session);
     CHECK(_z_background_executor_suspend(&inner->_runtime) == _Z_RES_OK);
     _z_unicast_transport_manager_t *manager = &inner->_transport_manager._unicast;
-    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = _z_unicast_transport_peer_established_begin(manager);
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id = first_established_peer(manager);
     CHECK(peer_id != _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers));
     _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
     CHECK(_z_unicast_transport_manager_close_peer(manager, peer_id, &reason, NULL) == _Z_RES_OK);
 }
+#endif
 
 int main(void) {
     char locator[64];
@@ -235,6 +249,7 @@ int main(void) {
     CHECK(wait_for_count(pending_count, &server, 0, Z_TRANSPORT_ACCEPT_TIMEOUT + 500));
     CHECK(active_slot_count(&server) == 1);
 
+#if Z_FEATURE_AUTO_RECONNECT == 1
     close_first_peer_and_keep_executor_suspended(&server);
     CHECK(wait_for_count(pending_count, &client, 1, 1500));
     z_sleep_ms(2 * Z_CONFIG_SOCKET_TIMEOUT);
@@ -243,6 +258,7 @@ int main(void) {
     CHECK(_z_background_executor_resume(&_Z_OWNED_RC_IN_VAL(&server)->_runtime) == _Z_RES_OK);
     CHECK(wait_for_count(established_count, &server, 1, 1500));
     CHECK(wait_for_count(established_count, &client, 1, 1500));
+#endif
 
     _z_unicast_link_clear(&silent);
 

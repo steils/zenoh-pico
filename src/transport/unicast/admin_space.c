@@ -60,7 +60,7 @@ z_result_t _z_unicast_transport_manager_encode_transports_json(const _z_unicast_
         _Z_RETURN_IF_ERR(_z_json_encoder_start_array(je));
         _Z_RETURN_IF_ERR(_z_json_encoder_start_object(je));
         _z_unicast_transport_peer_src_dst_address_t address;
-        _z_unicast_transport_peer_src_dst_address_get(&peer->_link, &address);
+        _z_unicast_transport_peer_src_dst_address_get(peer, &address);
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "src"));
         _Z_RETURN_IF_ERR(_z_json_encoder_write_z_string(je, _z_string_view_deref(&address.src)));
         _Z_RETURN_IF_ERR(_z_json_encoder_write_key(je, "dst"));

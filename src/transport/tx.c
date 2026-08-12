@@ -148,14 +148,12 @@ z_result_t _z_transport_manager_send_keep_alive(_z_transport_manager_t *manager)
         return ret;
     }
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
-    for (_z_address_to_unicast_transport_peer_hmap_iter_t iter =
-             _z_unicast_transport_peer_established_begin(&manager->_unicast);
-         iter != _z_address_to_unicast_transport_peer_hmap_end(&manager->_unicast._peers);
-         iter = _z_unicast_transport_peer_established_iter_next(&manager->_unicast, iter)) {
-        _z_unicast_transport_peer_t *peer =
-            &_z_address_to_unicast_transport_peer_hmap_at(&manager->_unicast._peers, iter)->val;
+    _z_address_to_unicast_transport_peer_hmap_elem_t *entry;
+    _ZP_FOREACH_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_unicast._peers, entry,
+                          entry->val._state == _Z_UNICAST_PEER_ESTABLISHED) {
+        _z_unicast_transport_peer_t *peer = &entry->val;
         if (!peer->_transmitted) {
-            _z_unicast_transport_manager_send_t_msg_to_peer(&manager->_unicast, &msg, (size_t)iter);
+            _z_unicast_transport_manager_send_t_msg_to_peer(&manager->_unicast, &msg, (size_t)entry_iter);
             // TODO: handle the error
         }
         peer->_transmitted = false;

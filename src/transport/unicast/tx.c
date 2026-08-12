@@ -99,9 +99,9 @@ z_result_t _z_unicast_transport_manager_send_n_msg_to_peer(_z_unicast_transport_
                                                            const _z_network_message_t *msg, z_reliability_t reliability,
                                                            size_t peer_id) {
     _Z_DEBUG("Send network message (%d) over unicast to peer %zu", msg->_tag, peer_id);
-    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_iter =
         (_z_address_to_unicast_transport_peer_hmap_iter_t)peer_id;
-    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_iter)->val;
     _z_zint_t *sn = _z_sn_get(&peer->_sn_tx, reliability);
 #if Z_FEATURE_BATCHING == 0
     _z_wbuf_t *tx_buf = &manager->_parent->_tx_buffer;
@@ -190,9 +190,9 @@ z_result_t _z_unicast_transport_manager_send_n_msg(_z_unicast_transport_manager_
 
 z_result_t _z_unicast_transport_manager_send_t_msg_to_peer(_z_unicast_transport_manager_t *manager,
                                                            const _z_transport_message_t *t_msg, size_t peer_id) {
-    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_iter =
         (_z_address_to_unicast_transport_peer_hmap_iter_t)peer_id;
-    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_iter)->val;
     _Z_DEBUG("Send transport message on transport unicast");
 #if Z_FEATURE_BATCHING == 0
     _z_wbuf_t *tx_buf = &manager->_parent->_tx_buffer;

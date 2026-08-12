@@ -38,7 +38,7 @@ static z_result_t _z_unicast_transport_manager_handle_transport_message(
     _z_unicast_transport_manager_t *manager, _z_transport_message_t *t_msg,
     _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
     _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
-    if (_z_unicast_peer_state_is_pending(peer->_state)) {
+    if (peer->_state != _Z_UNICAST_PEER_ESTABLISHED) {
         return _z_unicast_transport_manager_handle_handshake_message(manager, t_msg, peer_id);
     }
     peer->_received = true;
@@ -124,43 +124,33 @@ static z_result_t _z_unicast_pending_handshake_resize_rx(_z_unicast_transport_pe
 }
 
 static z_result_t _z_unicast_transport_manager_commit_pending(
-    _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t slot_id) {
-    return _z_unicast_transport_manager_establish_pending(manager, slot_id);
+    _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
+    return _z_unicast_transport_manager_establish_pending(manager, peer_id);
 }
 
 static z_result_t _z_unicast_transport_manager_handle_handshake_message(
     _z_unicast_transport_manager_t *manager, const _z_transport_message_t *message,
-    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id) {
-    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, slot_id)->val;
-    _z_transport_message_t output = {0};
-    bool has_output = false;
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id) {
+    _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
     bool complete = false;
     _z_session_t *session = manager->_parent->_session;
 
-    z_result_t ret = _z_transport_manager_lock(manager->_parent);
-    if (ret != _Z_RES_OK) {
-        return ret;
-    }
+    _Z_RETURN_IF_ERR(_z_transport_manager_lock(manager->_parent));
     _z_unicast_peer_state_t previous_state = peer->_state;
-    ret = _z_unicast_handshake_handle_input(peer, &peer->_state, &session->_local_zid, session->_mode, message, &output,
-                                            &has_output, &complete);
+    z_result_t ret = _z_unicast_handshake_handle_input(peer, &peer->_state, &peer->_link, &session->_local_zid,
+                                                       session->_mode, message, &complete);
     _z_transport_manager_unlock(manager->_parent);
     if (ret != _Z_RES_OK) {
         return ret;
     }
-    if (has_output) {
-        ret = _z_unicast_link_send_t_msg(&peer->_link, &output);
-        if (ret != _Z_RES_OK) {
-            return ret;
-        }
-    }
-    if (previous_state == _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK || previous_state == _Z_UNICAST_HS_ACCEPT_WAIT_INIT) {
+    if (_z_unicast_link_is_streamed(&peer->_link) &&
+        (previous_state == _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK || previous_state == _Z_UNICAST_HS_ACCEPT_WAIT_INIT)) {
         ret = _z_unicast_pending_handshake_resize_rx(peer, peer->_batch_size);
         if (ret != _Z_RES_OK) {
             return ret;
         }
     }
-    return complete ? _z_unicast_transport_manager_commit_pending(manager, slot_id) : _Z_RES_OK;
+    return complete ? _z_unicast_transport_manager_commit_pending(manager, peer_id) : _Z_RES_OK;
 }
 
 static z_result_t _z_unicast_link_recv_zbuf_datagram(_z_unicast_link_t *link, _z_zbuf_t *zbf) {

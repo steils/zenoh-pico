@@ -191,16 +191,11 @@ typedef struct _z_transport_manager_wait_iter_context_t {
 static bool _z_transport_manager_wait_iter_find_first_non_null(_z_transport_manager_wait_iter_context_t *ctx) {
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
     _z_address_to_unicast_transport_peer_hmap_t *peers = &ctx->manager->_unicast._peers;
-    for (; ctx->unicast_peer_iter != _z_address_to_unicast_transport_peer_hmap_end(peers);
-         ctx->unicast_peer_iter = _z_address_to_unicast_transport_peer_hmap_iter_next(peers, ctx->unicast_peer_iter)) {
-        _z_unicast_transport_peer_t *peer =
-            &_z_address_to_unicast_transport_peer_hmap_at(peers, ctx->unicast_peer_iter)->val;
-        if (_z_unicast_link_get_socket(&peer->_link) != NULL) {
-            return true;
-        } else {
-            _z_ready_links_mask_bitset_set(&ctx->ready_links_mask, ctx->unicast_peer_iter,
-                                           true);  // set the link as ready to force read on it
-        }
+    _z_address_to_unicast_transport_peer_hmap_iter_t end = _z_address_to_unicast_transport_peer_hmap_end(peers);
+    _ZP_IT_FIND(_z_address_to_unicast_transport_peer_hmap, peers, ctx->unicast_peer_iter, end,
+                _z_unicast_link_get_socket(&_->val._link) != NULL);
+    if (ctx->unicast_peer_iter != end) {
+        return true;
     }
 #endif
 #if Z_FEATURE_MULTICAST_TRANSPORT == 1

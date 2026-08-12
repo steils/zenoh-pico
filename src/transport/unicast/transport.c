@@ -31,6 +31,16 @@
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 
+typedef enum {
+    _Z_UNICAST_HANDSHAKE_ROLE_OPEN,
+    _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT,
+} _z_unicast_handshake_role_t;
+
+static z_result_t _z_unicast_handshake_start_open(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
+                                                  _z_unicast_link_t *link, const _z_id_t *local_zid, z_whatami_t mode);
+static void _z_unicast_handshake_start_accept(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
+                                              z_whatami_t mode);
+
 z_result_t _z_unicast_transport_manager_create(_z_unicast_transport_manager_t *manager,
                                                _z_transport_manager_t *parent) {
     memset(manager, 0, sizeof(_z_unicast_transport_manager_t));
@@ -43,26 +53,6 @@ z_result_t _z_unicast_transport_manager_create(_z_unicast_transport_manager_t *m
     _z_unicast_lease_pqueue_init_with_ctx(&manager->_lease_pqueue, &manager->_peers);
     manager->_rx_buffer = _z_zbuf_null();
     return _Z_RES_OK;
-}
-
-_z_address_to_unicast_transport_peer_hmap_iter_t _z_unicast_transport_peer_established_iter_next(
-    const _z_unicast_transport_manager_t *manager, _z_address_to_unicast_transport_peer_hmap_iter_t id) {
-    const _z_address_to_unicast_transport_peer_hmap_t *peers = &manager->_peers;
-    id = _z_address_to_unicast_transport_peer_hmap_iter_next(peers, id);
-    const _z_address_to_unicast_transport_peer_hmap_iter_t end = _z_address_to_unicast_transport_peer_hmap_end(peers);
-    _ZP_CONST_IT_FIND(_z_address_to_unicast_transport_peer_hmap, peers, id, end,
-                      _->val._state == _Z_UNICAST_PEER_ESTABLISHED);
-    return id;
-}
-
-_z_address_to_unicast_transport_peer_hmap_iter_t _z_unicast_transport_peer_established_begin(
-    const _z_unicast_transport_manager_t *manager) {
-    const _z_address_to_unicast_transport_peer_hmap_t *peers = &manager->_peers;
-    _z_address_to_unicast_transport_peer_hmap_iter_t id = _z_address_to_unicast_transport_peer_hmap_begin(peers);
-    const _z_address_to_unicast_transport_peer_hmap_iter_t end = _z_address_to_unicast_transport_peer_hmap_end(peers);
-    _ZP_CONST_IT_FIND(_z_address_to_unicast_transport_peer_hmap, peers, id, end,
-                      _->val._state == _Z_UNICAST_PEER_ESTABLISHED);
-    return id;
 }
 
 size_t _z_unicast_transport_peer_established_count(const _z_unicast_transport_manager_t *manager) {
@@ -79,7 +69,7 @@ size_t _z_unicast_transport_manager_get_pending_count(const _z_unicast_transport
     size_t count = 0;
     const _z_unicast_transport_peer_t *peer;
     _ZP_CONST_FOREACH_VAL_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, peer,
-                                    _z_unicast_peer_state_is_pending(peer->_state)) {
+                                    peer->_state != _Z_UNICAST_PEER_ESTABLISHED) {
         count++;
     }
     return count;
@@ -110,11 +100,7 @@ static z_result_t _z_unicast_transport_manager_start_pending(_z_unicast_transpor
     _z_session_t *session = manager->_parent->_session;
     _z_unicast_peer_state_t state;
     if (role == _Z_UNICAST_HANDSHAKE_ROLE_OPEN) {
-        _z_transport_message_t output;
-        uint16_t batch_size = _z_unicast_link_get_mtu(link);
-        batch_size = batch_size < Z_BATCH_UNICAST_SIZE ? batch_size : Z_BATCH_UNICAST_SIZE;
-        _z_unicast_handshake_start_open(&peer, &state, batch_size, &session->_local_zid, session->_mode, &output);
-        ret = _z_unicast_link_send_t_msg(link, &output);
+        ret = _z_unicast_handshake_start_open(&peer, &state, link, &session->_local_zid, session->_mode);
         if (ret != _Z_RES_OK) {
             _z_zbuf_clear(&peer._rx_buffer);
             return ret;
@@ -131,18 +117,17 @@ static z_result_t _z_unicast_transport_manager_start_pending(_z_unicast_transpor
     peer._link = *link;
     peer._state = state;
     _z_link_address_t key = _z_unicast_peer_key_numeric(manager->_next_numeric_peer_id++);
-    _z_address_to_unicast_transport_peer_hmap_iter_t slot_id =
+    _z_address_to_unicast_transport_peer_hmap_iter_t peer_id =
         _z_address_to_unicast_transport_peer_hmap_insert(&manager->_peers, &key, &peer);
-    if (slot_id == _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
-        _z_transport_manager_unlock(manager->_parent);
+    _z_transport_manager_unlock(manager->_parent);
+    if (peer_id == _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
         _z_zbuf_clear(&peer._rx_buffer);
-        return _Z_ERR_TRANSPORT_NO_SPACE;
+        return _Z_CAPACITY_LIMIT_REACHED;
     }
     *link = _z_unicast_link_null();
-    _z_transport_manager_unlock(manager->_parent);
 
-    (void)_z_unicast_lease_pqueue_push(&manager->_lease_pqueue, &slot_id);
-    _z_transport_manager_signal_pending_peer(manager->_parent);
+    (void)_z_unicast_lease_pqueue_push(&manager->_lease_pqueue, &peer_id);
+    _z_transport_manager_signal_pending_peer(manager->_parent, locator_id);
     return _Z_RES_OK;
 }
 
@@ -182,10 +167,10 @@ z_result_t _z_unicast_transport_manager_spawn_tasks(_z_unicast_transport_manager
 }
 void _z_unicast_transport_manager_close(_z_unicast_transport_manager_t *manager) {
     _z_transport_message_t msg = _z_t_msg_make_close(_Z_CLOSE_REASON_GENERIC, false);
-    for (_z_address_to_unicast_transport_peer_hmap_iter_t id = _z_unicast_transport_peer_established_begin(manager);
-         id != _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers);
-         id = _z_unicast_transport_peer_established_iter_next(manager, id)) {
-        _z_unicast_transport_manager_send_t_msg_to_peer(manager, &msg, id);
+    _z_address_to_unicast_transport_peer_hmap_elem_t *entry;
+    _ZP_FOREACH_FILTERED (_z_address_to_unicast_transport_peer_hmap, &manager->_peers, entry,
+                          entry->val._state == _Z_UNICAST_PEER_ESTABLISHED) {
+        _z_unicast_transport_manager_send_t_msg_to_peer(manager, &msg, entry_iter);
     }
 }
 
@@ -237,30 +222,22 @@ static void _z_unicast_transport_reject_peer(_z_unicast_link_t *link, const _z_i
     (void)_z_unicast_link_send_t_msg(link, &close);
 }
 
-static void _z_unicast_transport_peer_clear_io(_z_unicast_transport_peer_t *peer) {
-#if Z_FEATURE_BATCHING == 1
-    _z_wbuf_clear(&peer->_tx_buffer);
-#endif
-#if Z_FEATURE_FRAGMENTATION == 1
-    _z_dbuf_clear(&peer->_dbuf);
-#endif
-    _ZP_UNUSED(peer);
-}
-
-static z_result_t _z_unicast_transport_peer_init_io(_z_unicast_transport_peer_t *peer) {
+static z_result_t _z_unicast_transport_peer_init_io(_z_unicast_transport_peer_t *peer, uint16_t capacity) {
     peer->_received = true;
     peer->_transmitted = false;
 #if Z_FEATURE_FRAGMENTATION == 1
     _Z_RETURN_IF_ERR(_z_dbuf_init(&peer->_dbuf));
 #endif
 #if Z_FEATURE_BATCHING == 1
-    z_result_t ret = _z_wbuf_init(&peer->_tx_buffer, peer->_batch_size, false);
+    z_result_t ret = _z_wbuf_init(&peer->_tx_buffer, capacity, false);
     if (ret != _Z_RES_OK) {
 #if Z_FEATURE_FRAGMENTATION == 1
         _z_dbuf_clear(&peer->_dbuf);
 #endif
         return ret;
     }
+#else
+    _ZP_UNUSED(capacity);
 #endif
     return _Z_RES_OK;
 }
@@ -275,7 +252,12 @@ static void _z_unicast_transport_manager_report_added_peer(_z_unicast_transport_
     const _z_unicast_transport_peer_t *peer =
         &_z_address_to_unicast_transport_peer_hmap_const_at(&manager->_peers, id)->val;
     _Z_INFO("Added new unicast peer " _Z_ID_PRINT_FORMAT, _Z_ID_PRINT_ARGS(&peer->_remote_zid));
-    (void)_z_unicast_lease_pqueue_push(&manager->_lease_pqueue, &id);
+    _ZP_REMOVE_ONE(_z_unicast_lease_pqueue, &manager->_lease_pqueue, *_ == id);
+    if (_z_unicast_lease_pqueue_size(&manager->_lease_pqueue) >= Z_MAX_NUM_UNICAST_PEERS) {
+        _Z_ERROR("Failed to add unicast peer %zu to the lease queue: capacity limit reached", (size_t)id);
+    } else {
+        (void)_z_unicast_lease_pqueue_push(&manager->_lease_pqueue, &id);
+    }
     _z_transport_manager_signal_opened_peer(manager->_parent, peer->_locator_id);
     _z_unicast_transport_manager_report_connected_event(manager, id);
 }
@@ -283,10 +265,12 @@ static void _z_unicast_transport_manager_report_added_peer(_z_unicast_transport_
 z_result_t _z_unicast_transport_manager_establish_pending(_z_unicast_transport_manager_t *manager,
                                                           _z_address_to_unicast_transport_peer_hmap_iter_t id) {
     _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, id)->val;
-    if (!_z_unicast_peer_state_is_pending(peer->_state)) {
+    if (peer->_state == _Z_UNICAST_PEER_ESTABLISHED) {
         return _Z_ERR_INVALID;
     }
-    _Z_RETURN_IF_ERR(_z_unicast_transport_peer_init_io(peer));
+    uint16_t mtu = _z_unicast_link_get_mtu(&peer->_link);
+    uint16_t capacity = mtu < peer->_batch_size ? mtu : peer->_batch_size;
+    _Z_RETURN_IF_ERR(_z_unicast_transport_peer_init_io(peer, capacity));
     _Z_CLEAN_RETURN_IF_ERR(_z_transport_manager_lock(manager->_parent), _z_unicast_transport_peer_clear_io(peer));
     z_result_t ret = _z_unicast_transport_manager_validate_peer(manager, &peer->_remote_zid);
     if (ret != _Z_RES_OK) {
@@ -295,7 +279,6 @@ z_result_t _z_unicast_transport_manager_establish_pending(_z_unicast_transport_m
         _z_unicast_transport_peer_clear_io(peer);
         return ret;
     }
-    _ZP_REMOVE_ONE(_z_unicast_lease_pqueue, &manager->_lease_pqueue, *_ == id);
     _z_unicast_transport_peer_set_lease_deadline(peer);
     peer->_state = _Z_UNICAST_PEER_ESTABLISHED;
     _z_transport_manager_unlock(manager->_parent);
@@ -308,11 +291,13 @@ static z_result_t _z_unicast_transport_manager_add_peer_inner(_z_unicast_transpo
                                                               _z_unicast_transport_peer_t *peer,
                                                               _z_unicast_link_t *link, _z_connect_peer_id_t locator_id,
                                                               _z_zbuf_t *opt_rx_leftover) {
-    _Z_RETURN_IF_ERR(_z_unicast_transport_peer_init_io(peer));
+    uint16_t mtu = _z_unicast_link_get_mtu(link);
+    uint16_t capacity = mtu < peer->_batch_size ? mtu : peer->_batch_size;
+    _Z_RETURN_IF_ERR(_z_unicast_transport_peer_init_io(peer, capacity));
     _z_zbuf_t rx_buffer = _z_zbuf_null();
     z_result_t ret = _Z_RES_OK;
     if (_z_unicast_link_is_streamed(link)) {
-        ret = _z_zbuf_init(&rx_buffer, peer->_batch_size);
+        ret = _z_zbuf_init(&rx_buffer, capacity);
         if (ret == _Z_RES_OK && opt_rx_leftover != NULL && _z_zbuf_readable_len(opt_rx_leftover) > 0) {
             _z_zbuf_copy_bytes(&rx_buffer, opt_rx_leftover);
         }
@@ -381,28 +366,42 @@ z_result_t _z_unicast_transport_manager_add_listener(_z_unicast_transport_manage
 }
 #endif
 
-void _z_unicast_handshake_start_open(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                     uint16_t batch_size, const _z_id_t *local_zid, z_whatami_t mode,
-                                     _z_transport_message_t *output) {
-    *state = _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK;
-    *output = _z_t_msg_make_init_syn(mode, *local_zid, batch_size);
-    peer->_sn_res = _z_sn_max(output->_body._init._seq_num_res);
-    peer->_batch_size = output->_body._init._batch_size;
-#if Z_FEATURE_FRAGMENTATION == 1
-    peer->_patch = output->_body._init._patch;
-#endif
+static void _z_unicast_handshake_log_message(const char *action, const _z_transport_message_t *message) {
+    if (_Z_MID(message->_header) == _Z_MID_T_INIT) {
+        _Z_DEBUG("%s Z_INIT(%s)", action, _Z_HAS_FLAG(message->_header, _Z_FLAG_T_INIT_A) ? "Ack" : "Syn");
+    } else if (_Z_MID(message->_header) == _Z_MID_T_OPEN) {
+        _Z_DEBUG("%s Z_OPEN(%s)", action, _Z_HAS_FLAG(message->_header, _Z_FLAG_T_OPEN_A) ? "Ack" : "Syn");
+    }
 }
 
-void _z_unicast_handshake_start_accept(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                       z_whatami_t mode) {
+static z_result_t _z_unicast_handshake_send(_z_unicast_link_t *link, const _z_transport_message_t *message) {
+    _z_unicast_handshake_log_message("Sending", message);
+    return _z_unicast_link_send_t_msg(link, message);
+}
+
+static z_result_t _z_unicast_handshake_start_open(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
+                                                  _z_unicast_link_t *link, const _z_id_t *local_zid, z_whatami_t mode) {
+    *state = _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK;
+    uint16_t batch_size = _z_unicast_link_get_mtu(link);
+    batch_size = batch_size < Z_BATCH_UNICAST_SIZE ? batch_size : Z_BATCH_UNICAST_SIZE;
+    _z_transport_message_t output = _z_t_msg_make_init_syn(mode, *local_zid, batch_size);
+    peer->_sn_res = _z_sn_max(output._body._init._seq_num_res);
+    peer->_batch_size = output._body._init._batch_size;
+#if Z_FEATURE_FRAGMENTATION == 1
+    peer->_patch = output._body._init._patch;
+#endif
+    return _z_unicast_handshake_send(link, &output);
+}
+
+static void _z_unicast_handshake_start_accept(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
+                                              z_whatami_t mode) {
     assert(mode == Z_WHATAMI_PEER);
     *state = _Z_UNICAST_HS_ACCEPT_WAIT_INIT;
     _ZP_UNUSED(peer);
 }
 
 static z_result_t _z_unicast_handshake_open_init_ack(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                                     const _z_transport_message_t *input,
-                                                     _z_transport_message_t *output, bool *has_output) {
+                                                     _z_unicast_link_t *link, const _z_transport_message_t *input) {
     if ((_Z_MID(input->_header) != _Z_MID_T_INIT) || !_Z_HAS_FLAG(input->_header, _Z_FLAG_T_INIT_A)) {
         return _Z_ERR_MESSAGE_UNEXPECTED;
     }
@@ -440,11 +439,10 @@ static z_result_t _z_unicast_handshake_open_init_ack(_z_unicast_transport_peer_t
     peer->_sn_tx._reliable &= peer->_sn_res;
     peer->_sn_tx._best_effort = peer->_sn_tx._reliable;
 
-    *output =
+    _z_transport_message_t output =
         _z_t_msg_make_open_syn(Z_TRANSPORT_LEASE, peer->_sn_tx._reliable, _z_slice_view_deref(&init_ack->_cookie));
-    *has_output = true;
     *state = _Z_UNICAST_HS_OPEN_WAIT_OPEN_ACK;
-    return _Z_RES_OK;
+    return _z_unicast_handshake_send(link, &output);
 }
 
 static z_result_t _z_unicast_handshake_open_open_ack(_z_unicast_transport_peer_t *peer,
@@ -463,45 +461,42 @@ static z_result_t _z_unicast_handshake_open_open_ack(_z_unicast_transport_peer_t
 }
 
 static z_result_t _z_unicast_handshake_accept_init(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                                   const _z_id_t *local_zid, z_whatami_t local_whatami,
-                                                   const _z_transport_message_t *input, _z_transport_message_t *output,
-                                                   bool *has_output) {
+                                                   _z_unicast_link_t *link, const _z_id_t *local_zid,
+                                                   z_whatami_t local_whatami, const _z_transport_message_t *input) {
     if ((_Z_MID(input->_header) != _Z_MID_T_INIT) || _Z_HAS_FLAG(input->_header, _Z_FLAG_T_INIT_A)) {
         return _Z_ERR_MESSAGE_UNEXPECTED;
     }
 
     _z_slice_t cookie = _z_slice_null();
-    *output = _z_t_msg_make_init_ack(local_whatami, *local_zid, &cookie);
-    if (input->_body._init._seq_num_res < output->_body._init._seq_num_res) {
-        output->_body._init._seq_num_res = input->_body._init._seq_num_res;
+    _z_transport_message_t output = _z_t_msg_make_init_ack(local_whatami, *local_zid, &cookie);
+    if (input->_body._init._seq_num_res < output._body._init._seq_num_res) {
+        output._body._init._seq_num_res = input->_body._init._seq_num_res;
     }
-    if (input->_body._init._req_id_res < output->_body._init._req_id_res) {
-        output->_body._init._req_id_res = input->_body._init._req_id_res;
+    if (input->_body._init._req_id_res < output._body._init._req_id_res) {
+        output._body._init._req_id_res = input->_body._init._req_id_res;
     }
-    if (input->_body._init._batch_size < output->_body._init._batch_size) {
-        output->_body._init._batch_size = input->_body._init._batch_size;
+    if (input->_body._init._batch_size < output._body._init._batch_size) {
+        output._body._init._batch_size = input->_body._init._batch_size;
     }
 #if Z_FEATURE_FRAGMENTATION == 1
-    if (input->_body._init._patch < output->_body._init._patch) {
-        output->_body._init._patch = input->_body._init._patch;
+    if (input->_body._init._patch < output._body._init._patch) {
+        output._body._init._patch = input->_body._init._patch;
     }
 #endif
 
-    peer->_sn_res = _z_sn_max(output->_body._init._seq_num_res);
-    peer->_batch_size = output->_body._init._batch_size;
+    peer->_sn_res = _z_sn_max(output._body._init._seq_num_res);
+    peer->_batch_size = output._body._init._batch_size;
     peer->_remote_zid = input->_body._init._zid;
     peer->_remote_whatami = input->_body._init._whatami;
 #if Z_FEATURE_FRAGMENTATION == 1
-    peer->_patch = output->_body._init._patch;
+    peer->_patch = output._body._init._patch;
 #endif
     *state = _Z_UNICAST_HS_ACCEPT_WAIT_OPEN;
-    *has_output = true;
-    return _Z_RES_OK;
+    return _z_unicast_handshake_send(link, &output);
 }
 
-static z_result_t _z_unicast_handshake_accept_open(_z_unicast_transport_peer_t *peer,
-                                                   const _z_transport_message_t *input, _z_transport_message_t *output,
-                                                   bool *has_output, bool *complete) {
+static z_result_t _z_unicast_handshake_accept_open(_z_unicast_transport_peer_t *peer, _z_unicast_link_t *link,
+                                                   const _z_transport_message_t *input, bool *complete) {
     if ((_Z_MID(input->_header) != _Z_MID_T_OPEN) || _Z_HAS_FLAG(input->_header, _Z_FLAG_T_OPEN_A)) {
         return _Z_ERR_MESSAGE_UNEXPECTED;
     }
@@ -511,44 +506,34 @@ static z_result_t _z_unicast_handshake_accept_open(_z_unicast_transport_peer_t *
 #endif
     peer->_lease_duration_ms =
         (uint32_t)(input->_body._open._lease < Z_TRANSPORT_LEASE ? input->_body._open._lease : Z_TRANSPORT_LEASE);
-    *output = _z_t_msg_make_open_ack(Z_TRANSPORT_LEASE, peer->_sn_tx._reliable);
-    *has_output = true;
+    _z_transport_message_t output = _z_t_msg_make_open_ack(Z_TRANSPORT_LEASE, peer->_sn_tx._reliable);
+    _Z_RETURN_IF_ERR(_z_unicast_handshake_send(link, &output));
     *complete = true;
     return _Z_RES_OK;
 }
 
 z_result_t _z_unicast_handshake_handle_input(_z_unicast_transport_peer_t *peer, _z_unicast_peer_state_t *state,
-                                             const _z_id_t *local_zid, z_whatami_t local_whatami,
-                                             const _z_transport_message_t *input, _z_transport_message_t *output,
-                                             bool *has_output, bool *complete) {
-    *has_output = false;
+                                             _z_unicast_link_t *link, const _z_id_t *local_zid,
+                                             z_whatami_t local_whatami, const _z_transport_message_t *input,
+                                             bool *complete) {
     *complete = false;
     switch (*state) {
         case _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK:
-            return _z_unicast_handshake_open_init_ack(peer, state, input, output, has_output);
+            return _z_unicast_handshake_open_init_ack(peer, state, link, input);
         case _Z_UNICAST_HS_OPEN_WAIT_OPEN_ACK:
             return _z_unicast_handshake_open_open_ack(peer, input, complete);
         case _Z_UNICAST_HS_ACCEPT_WAIT_INIT:
-            return _z_unicast_handshake_accept_init(peer, state, local_zid, local_whatami, input, output, has_output);
+            return _z_unicast_handshake_accept_init(peer, state, link, local_zid, local_whatami, input);
         case _Z_UNICAST_HS_ACCEPT_WAIT_OPEN:
-            return _z_unicast_handshake_accept_open(peer, input, output, has_output, complete);
+            return _z_unicast_handshake_accept_open(peer, link, input, complete);
         default:
             return _Z_ERR_INVALID;
     }
 }
 
-static void _z_unicast_handshake_log_message(const char *action, const _z_transport_message_t *message) {
-    if (_Z_MID(message->_header) == _Z_MID_T_INIT) {
-        _Z_DEBUG("%s Z_INIT(%s)", action, _Z_HAS_FLAG(message->_header, _Z_FLAG_T_INIT_A) ? "Ack" : "Syn");
-    } else if (_Z_MID(message->_header) == _Z_MID_T_OPEN) {
-        _Z_DEBUG("%s Z_OPEN(%s)", action, _Z_HAS_FLAG(message->_header, _Z_FLAG_T_OPEN_A) ? "Ack" : "Syn");
-    }
-}
-
-z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, void *io_context,
-                                           _z_unicast_handshake_send_f send_f, _z_unicast_handshake_recv_f recv_f,
-                                           uint16_t batch_size, const _z_id_t *local_zid, z_whatami_t mode,
-                                           _z_unicast_handshake_role_t role, _z_zbuf_t *opt_rx_leftover) {
+static z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, _z_unicast_link_t *link,
+                                                  const _z_id_t *local_zid, z_whatami_t mode,
+                                                  _z_unicast_handshake_role_t role, _z_zbuf_t *opt_rx_leftover) {
     if (role != _Z_UNICAST_HANDSHAKE_ROLE_OPEN && role != _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT) {
         return _Z_ERR_INVALID;
     }
@@ -560,14 +545,7 @@ z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, vo
     z_clock_t deadline = z_clock_now();
     z_clock_advance_ms(&deadline, open ? Z_TRANSPORT_CONNECT_TIMEOUT : Z_TRANSPORT_ACCEPT_TIMEOUT);
 
-    _z_transport_message_t output = {0};
-    bool has_output = open;
     bool complete = false;
-    if (open) {
-        _z_unicast_handshake_start_open(peer, &state, batch_size, local_zid, mode, &output);
-    } else {
-        _z_unicast_handshake_start_accept(peer, &state, mode);
-    }
 
     _z_zbuf_t zbuf;
     z_result_t ret = _z_zbuf_init(&zbuf, Z_BATCH_UNICAST_SIZE);
@@ -575,39 +553,26 @@ z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, vo
         return ret;
     }
 
-    while (true) {
-        if (has_output) {
-            _z_unicast_handshake_log_message("Sending", &output);
-            ret = send_f(io_context, &output);
-            if (ret != _Z_RES_OK) {
-                break;
-            }
-            has_output = false;
-        }
-        if (complete) {
-            break;
-        }
+    if (open) {
+        ret = _z_unicast_handshake_start_open(peer, &state, link, local_zid, mode);
+    } else {
+        _z_unicast_handshake_start_accept(peer, &state, mode);
+    }
 
+    while (ret == _Z_RES_OK && !complete) {
         _z_unicast_peer_state_t previous_state = state;
         _z_transport_message_t input = {0};
-        ret = recv_f(io_context, &input, &zbuf, deadline);
+        ret = _z_unicast_link_recv_t_msg(link, &input, &zbuf, deadline);
         if (ret != _Z_RES_OK) {
             break;
         }
         _z_unicast_handshake_log_message("Received", &input);
-        ret = _z_unicast_handshake_handle_input(peer, &state, local_zid, mode, &input, &output, &has_output, &complete);
+        ret = _z_unicast_handshake_handle_input(peer, &state, link, local_zid, mode, &input, &complete);
         if (ret != _Z_RES_OK) {
             break;
         }
 
         if (previous_state == _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK) {
-            // OpenSyn borrows the InitAck cookie, so send it before replacing the receive buffer.
-            _z_unicast_handshake_log_message("Sending", &output);
-            ret = send_f(io_context, &output);
-            if (ret != _Z_RES_OK) {
-                break;
-            }
-            has_output = false;
             _z_zbuf_clear(&zbuf);
             ret = _z_zbuf_init(&zbuf, peer->_batch_size);
             if (ret != _Z_RES_OK) {
@@ -626,29 +591,15 @@ z_result_t _z_unicast_handshake_drive_sync(_z_unicast_transport_peer_t *peer, vo
     return ret;
 }
 
-static z_result_t _z_unicast_handshake_link_send(void *context, const _z_transport_message_t *message) {
-    return _z_unicast_link_send_t_msg((_z_unicast_link_t *)context, message);
-}
-
-static z_result_t _z_unicast_handshake_link_recv(void *context, _z_transport_message_t *message, _z_zbuf_t *zbuf,
-                                                 z_clock_t deadline) {
-    return _z_unicast_link_recv_t_msg((_z_unicast_link_t *)context, message, zbuf, deadline);
-}
-
 static z_result_t _z_unicast_handshake_open(_z_unicast_transport_peer_t *peer, _z_unicast_link_t *link,
                                             const _z_id_t *local_zid, z_whatami_t mode, _z_zbuf_t *rx_leftover) {
     *rx_leftover = _z_zbuf_null();
-    uint16_t batch_size = _z_unicast_link_get_mtu(link);
-    batch_size = batch_size < Z_BATCH_UNICAST_SIZE ? batch_size : Z_BATCH_UNICAST_SIZE;
-    return _z_unicast_handshake_drive_sync(peer, link, _z_unicast_handshake_link_send, _z_unicast_handshake_link_recv,
-                                           batch_size, local_zid, mode, _Z_UNICAST_HANDSHAKE_ROLE_OPEN, rx_leftover);
+    return _z_unicast_handshake_drive_sync(peer, link, local_zid, mode, _Z_UNICAST_HANDSHAKE_ROLE_OPEN, rx_leftover);
 }
 
 z_result_t _z_unicast_handshake_listen(_z_unicast_transport_peer_t *peer, _z_unicast_link_t *link,
                                        const _z_id_t *local_zid, z_whatami_t mode) {
-    return _z_unicast_handshake_drive_sync(peer, link, _z_unicast_handshake_link_send, _z_unicast_handshake_link_recv,
-                                           Z_BATCH_UNICAST_SIZE, local_zid, mode, _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT,
-                                           NULL);
+    return _z_unicast_handshake_drive_sync(peer, link, local_zid, mode, _Z_UNICAST_HANDSHAKE_ROLE_ACCEPT, NULL);
 }
 
 static z_result_t _z_unicast_transport_manager_accept_peer_sync(_z_unicast_transport_manager_t *manager,
@@ -711,36 +662,24 @@ z_result_t _z_unicast_transport_manager_close_peer(_z_unicast_transport_manager_
                                                    const _z_close_reason_t *opt_reason,
                                                    _z_address_to_unicast_transport_peer_hmap_iter_t *opt_next_peer_id) {
     _z_unicast_transport_peer_t *peer = &_z_address_to_unicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
-    bool pending = _z_unicast_peer_state_is_pending(peer->_state);
+    bool pending = peer->_state != _Z_UNICAST_PEER_ESTABLISHED;
     if (pending) {
         _Z_INFO("Closing pending unicast handshake %zu", (size_t)peer_id);
-        bool outbound = _z_unicast_handshake_state_is_open(peer->_state);
-        _z_connect_peer_id_t locator_id = peer->_locator_id;
-        _Z_RETURN_IF_ERR(_z_transport_manager_lock(manager->_parent));
-        _ZP_REMOVE_ONE(_z_unicast_lease_pqueue, &manager->_lease_pqueue, *_ == peer_id);
-        if (opt_next_peer_id != NULL) {
-            *opt_next_peer_id = _z_unicast_transport_peer_established_iter_next(manager, peer_id);
-        }
-        _z_address_to_unicast_transport_peer_hmap_remove_at(&manager->_peers, peer_id, NULL, NULL);
-        _z_transport_manager_unlock(manager->_parent);
-        if (outbound) {
-            _z_transport_manager_signal_closed_peer(manager->_parent, locator_id);
-        }
-        return _Z_RES_OK;
+    } else {
+        _Z_INFO("Closing unicast peer " _Z_ID_PRINT_FORMAT, _Z_ID_PRINT_ARGS(&peer->_remote_zid));
+        _z_unicast_transport_manager_report_disconnected_event(manager, peer_id);
     }
 
-    _Z_INFO("Closing unicast peer " _Z_ID_PRINT_FORMAT, _Z_ID_PRINT_ARGS(&peer->_remote_zid));
-    _z_unicast_transport_manager_report_disconnected_event(manager, peer_id);
-    _ZP_REMOVE_ONE(_z_unicast_lease_pqueue, &manager->_lease_pqueue, *_ == peer_id);
     _Z_RETURN_IF_ERR(_z_transport_manager_lock(manager->_parent));
+    _ZP_REMOVE_ONE(_z_unicast_lease_pqueue, &manager->_lease_pqueue, *_ == peer_id);
     z_result_t ret = _Z_RES_OK;
-    if (opt_reason != NULL) {
+    if (!pending && opt_reason != NULL) {
         _z_transport_message_t msg = _z_t_msg_make_close(*opt_reason, true);
         ret = _z_unicast_transport_manager_send_t_msg_to_peer(manager, &msg, peer_id);
     }
     _z_connect_peer_id_t locator_id = peer->_locator_id;
     if (opt_next_peer_id != NULL) {
-        *opt_next_peer_id = _z_unicast_transport_peer_established_iter_next(manager, peer_id);
+        *opt_next_peer_id = _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, peer_id);
     }
     _z_address_to_unicast_transport_peer_hmap_remove_at(&manager->_peers, peer_id, NULL, NULL);
     _z_transport_manager_unlock(manager->_parent);
@@ -760,7 +699,7 @@ const z_clock_t *_z_unicast_transport_manager_check_lease(_z_unicast_transport_m
         if (zp_clock_compare(&now, &peer->_lease_deadline) < 0) {
             break;
         }
-        if (_z_unicast_peer_state_is_pending(peer->_state)) {
+        if (peer->_state != _Z_UNICAST_PEER_ESTABLISHED) {
             z_result_t ret = _z_unicast_transport_manager_close_peer(manager, peer_id, NULL, NULL);
             if (ret != _Z_RES_OK) {
                 _Z_ERROR("Failed to remove expired pending handshake %zu", (size_t)peer_id);

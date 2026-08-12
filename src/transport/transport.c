@@ -274,7 +274,14 @@ _z_fut_fn_result_t _z_transport_manager_read_task_fn(void *transport_manager, _z
     return _z_fut_fn_result_continue();
 }
 
-void _z_transport_manager_signal_pending_peer(_z_transport_manager_t *manager) {
+void _z_transport_manager_signal_pending_peer(_z_transport_manager_t *manager, _z_connect_peer_id_t locator_id) {
+#if Z_FEATURE_UNICAST_PEER == 1 || Z_FEATURE_AUTO_RECONNECT == 1
+    if (locator_id < Z_MAX_NUM_UNICAST_PEERS) {
+        _z_peer_mask_bitset_set_at(&manager->_connect_info.connected_locators, locator_id, true);
+    }
+#else
+    _ZP_UNUSED(locator_id);
+#endif
     if (!_z_fut_handle_is_null(manager->_lease_task)) {
         _z_runtime_resume_suspended_or_wakeup_sleeping_fut(&manager->_session->_runtime, &manager->_lease_task);
     }
@@ -345,11 +352,7 @@ _z_fut_fn_result_t _z_transport_manager_connect_task_fn(void *transport_manager,
     } else {
         size_t i = manager->_connect_info.next_peer;
         for (; i < _z_config_connect_vec_size(&manager->_session->_config._connect); i++) {
-            if (!*_z_peer_mask_bitset_const_at(&manager->_connect_info.connected_locators, i)
-#if Z_FEATURE_UNICAST_TRANSPORT == 1
-                && !_z_unicast_transport_manager_has_pending_locator(&manager->_unicast, (_z_connect_peer_id_t)i)
-#endif
-            ) {
+            if (!*_z_peer_mask_bitset_const_at(&manager->_connect_info.connected_locators, i)) {
                 const char *locator = *_z_config_connect_vec_at(&manager->_session->_config._connect, i);
                 _z_string_view_t lv = _z_string_view_make_from_str(locator);
                 z_result_t ret =
