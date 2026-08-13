@@ -188,7 +188,7 @@ static z_result_t _z_tcp_windows_listen(_z_sys_net_socket_t *sock, const _z_sys_
                 break;
             }
         }
-        if (listen(sock->_sock._fd, Z_LISTEN_MAX_CONNECTION_NB) < 0) {
+        if (listen(sock->_sock._fd, Z_MAX_NUM_PEERS) < 0) {
             if (it->ai_next == NULL) {
                 _Z_ERROR_LOG(_Z_ERR_GENERIC);
                 ret = _Z_ERR_GENERIC;
@@ -197,12 +197,17 @@ static z_result_t _z_tcp_windows_listen(_z_sys_net_socket_t *sock, const _z_sys_
         }
     }
 
+    // On success the listening socket is kept open and its WSAStartup reference is released later by
+    // _z_tcp_windows_close (which calls WSACleanup). Only release the reference here on the error path,
+    // where the socket is closed. Calling WSACleanup on success would leave the reference count
+    // unbalanced (double release once the socket is finally closed), which can prematurely unload
+    // Winsock and invalidate other live sockets in the process.
     if (ret != _Z_RES_OK) {
         closesocket(sock->_sock._fd);
         sock->_sock._fd = INVALID_SOCKET;
+        WSACleanup();
     }
 
-    WSACleanup();
     return ret;
 }
 
@@ -210,24 +215,35 @@ static z_result_t _z_tcp_windows_accept(const _z_sys_net_socket_t *sock_in, _z_s
     struct sockaddr naddr;
     int nlen = sizeof(naddr);
     sock_out->_sock._fd = INVALID_SOCKET;
+
+    // Take a WSAStartup reference for the accepted socket so it stays balanced with the matching
+    // WSACleanup performed by _z_tcp_windows_close when the socket is destroyed.
+    if (WSAStartup(MAKEWORD(2, 2), &_z_tcp_windows_wsa_data) != 0) {
+        _Z_ERROR_RETURN(_Z_ERR_GENERIC);
+    }
+
     SOCKET con_socket = accept(sock_in->_sock._fd, &naddr, &nlen);
     if (con_socket == INVALID_SOCKET) {
+        WSACleanup();
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
 
     DWORD tv = Z_CONFIG_SOCKET_TIMEOUT;
     if (setsockopt(con_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(tv)) < 0) {
         closesocket(con_socket);
+        WSACleanup();
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
     int flags = 1;
     if (setsockopt(con_socket, SOL_SOCKET, SO_KEEPALIVE, (void *)&flags, sizeof(flags)) < 0) {
         closesocket(con_socket);
+        WSACleanup();
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
 #if Z_FEATURE_TCP_NODELAY == 1
     if (setsockopt(con_socket, IPPROTO_TCP, TCP_NODELAY, (void *)&flags, sizeof(flags)) < 0) {
         closesocket(con_socket);
+        WSACleanup();
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
 #endif
@@ -236,6 +252,7 @@ static z_result_t _z_tcp_windows_accept(const _z_sys_net_socket_t *sock_in, _z_s
     ling.l_linger = Z_TRANSPORT_LEASE / 1000;
     if (setsockopt(con_socket, SOL_SOCKET, SO_LINGER, (void *)&ling, sizeof(struct linger)) < 0) {
         closesocket(con_socket);
+        WSACleanup();
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
 
@@ -259,24 +276,6 @@ static size_t _z_tcp_windows_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t
     }
 
     return (size_t)rb;
-}
-
-static size_t _z_tcp_windows_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_tcp_windows_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
 }
 
 static size_t _z_tcp_windows_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
@@ -309,10 +308,6 @@ z_result_t _z_tcp_accept(const _z_sys_net_socket_t *sock_in, _z_sys_net_socket_t
 void _z_tcp_close(_z_sys_net_socket_t *sock) { _z_tcp_windows_close(sock); }
 
 size_t _z_tcp_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) { return _z_tcp_windows_read(sock, ptr, len); }
-
-size_t _z_tcp_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    return _z_tcp_windows_read_exact(sock, ptr, len);
-}
 
 size_t _z_tcp_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     return _z_tcp_windows_write(sock, ptr, len);

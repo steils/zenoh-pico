@@ -29,6 +29,7 @@
 extern "C" {
 #endif
 
+#define _ZP_PLATFORM_HAS_REALLOC
 #if Z_FEATURE_MULTI_THREAD == 1
 typedef pthread_t _z_task_t;
 typedef pthread_attr_t z_task_attr_t;
@@ -48,9 +49,6 @@ typedef struct {
         int _fd;
 #endif
     };
-#if Z_FEATURE_LINK_TLS == 1
-    void *_tls_sock;  // Pointer to _z_tls_socket_t
-#endif
 } _z_sys_net_socket_t;
 
 typedef struct {

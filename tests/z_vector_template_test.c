@@ -908,13 +908,13 @@ static void test_heap_zp_remove(void) {
     intvec_t v = intvec_new();
     for (int i = 0; i < 10; i++) assert(intvec_push_back(&v, &i));  // [0..9]
 
-    _ZP_REMOVE(intvec, &v, *_ % 2 != 0);  // drop all odd values
+    _ZP_REMOVE_ALL(intvec, &v, *_ % 2 != 0);  // drop all odd values
     assert(intvec_size(&v) == 5);
     int expected[] = {0, 2, 4, 6, 8};
     for (size_t i = 0; i < 5; i++) assert(*intvec_at(&v, i) == expected[i]);
 
     // Removing everything leaves an empty vector.
-    _ZP_REMOVE(intvec, &v, true);
+    _ZP_REMOVE_ALL(intvec, &v, true);
     assert(intvec_is_empty(&v));
 
     intvec_destroy(&v);

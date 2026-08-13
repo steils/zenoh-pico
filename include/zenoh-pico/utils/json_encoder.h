@@ -64,6 +64,8 @@ z_result_t _z_json_encoder_write_i64(_z_json_encoder_t *je, int64_t value);
 z_result_t _z_json_encoder_write_u64(_z_json_encoder_t *je, uint64_t value);
 z_result_t _z_json_encoder_write_boolean(_z_json_encoder_t *je, bool value);
 z_result_t _z_json_encoder_write_null(_z_json_encoder_t *je);
+z_result_t _z_json_encoder_write_zid(_z_json_encoder_t *je, const _z_id_t *value);
+z_result_t _z_json_encoder_write_whatami(_z_json_encoder_t *je, z_whatami_t mode);
 
 z_result_t _z_json_encoder_finish(_z_json_encoder_t *je, z_owned_bytes_t *bytes);
 void _z_json_encoder_clear(_z_json_encoder_t *je);

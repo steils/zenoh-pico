@@ -61,32 +61,10 @@ z_result_t _z_join_encode(_z_wbuf_t *wbf, uint8_t header, const _z_t_msg_join_t 
     } else {
         _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_lease));
     }
-    _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._val._plain._reliable));
-    _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._val._plain._best_effort));
+    _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._reliable));
+    _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._best_effort));
 #if Z_FEATURE_FRAGMENTATION == 1
     bool has_patch = msg->_patch != _Z_NO_PATCH;
-#else
-    bool has_patch = false;
-#endif
-    if (msg->_next_sn._is_qos) {
-        if (_Z_HAS_FLAG(header, _Z_FLAG_T_Z)) {
-            _Z_RETURN_IF_ERR(_z_uint8_encode(wbf, _Z_MSG_EXT_ID_JOIN_QOS | _Z_MSG_EXT_MORE(has_patch)));
-            size_t len = 0;
-            for (uint8_t i = 0; (i < Z_PRIORITIES_NUM) && (ret == _Z_RES_OK); i++) {
-                len += _z_zint_len(msg->_next_sn._val._qos[i]._reliable) +
-                       _z_zint_len(msg->_next_sn._val._qos[i]._best_effort);
-            }
-            _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, len));
-            for (uint8_t i = 0; (i < Z_PRIORITIES_NUM) && (ret == _Z_RES_OK); i++) {
-                _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._val._qos[i]._reliable));
-                _Z_RETURN_IF_ERR(_z_zsize_encode(wbf, msg->_next_sn._val._qos[i]._best_effort));
-            }
-        } else {
-            _Z_DEBUG("Attempted to serialize QoS-SN extension, but the header extension flag was unset");
-            ret |= _Z_ERR_MESSAGE_SERIALIZATION_FAILED;
-        }
-    }
-#if Z_FEATURE_FRAGMENTATION == 1
     if (has_patch) {
         if (_Z_HAS_FLAG(header, _Z_FLAG_T_Z)) {
             _Z_RETURN_IF_ERR(_z_uint8_encode(wbf, _Z_MSG_EXT_ID_JOIN_PATCH));
@@ -105,12 +83,7 @@ z_result_t _z_join_decode_ext(_z_msg_ext_t *extension, void *ctx) {
     z_result_t ret = _Z_RES_OK;
     _z_t_msg_join_t *msg = (_z_t_msg_join_t *)ctx;
     if (_Z_EXT_FULL_ID(extension->_header) == _Z_MSG_EXT_ID_JOIN_QOS) {
-        msg->_next_sn._is_qos = true;
-        _z_zbuf_t zbf = _z_slice_as_zbuf(_z_slice_view_deref(&extension->_body._zbuf._val));
-        for (int i = 0; (ret == _Z_RES_OK) && (i < Z_PRIORITIES_NUM); ++i) {
-            ret |= _z_zsize_decode(&msg->_next_sn._val._qos[i]._reliable, &zbf);
-            ret |= _z_zsize_decode(&msg->_next_sn._val._qos[i]._best_effort, &zbf);
-        }
+        msg->_is_qos = true;
 #if Z_FEATURE_FRAGMENTATION == 1
     } else if (_Z_EXT_FULL_ID(extension->_header) == _Z_MSG_EXT_ID_JOIN_PATCH) {
         msg->_patch = (uint8_t)extension->_body._zint._val;
@@ -164,9 +137,8 @@ z_result_t _z_join_decode(_z_t_msg_join_t *msg, _z_zbuf_t *zbf, uint8_t header) 
         }
     }
     if (ret == _Z_RES_OK) {
-        msg->_next_sn._is_qos = false;
-        ret |= _z_zsize_decode(&msg->_next_sn._val._plain._reliable, zbf);
-        ret |= _z_zsize_decode(&msg->_next_sn._val._plain._best_effort, zbf);
+        ret |= _z_zsize_decode(&msg->_next_sn._reliable, zbf);
+        ret |= _z_zsize_decode(&msg->_next_sn._best_effort, zbf);
     }
 #if Z_FEATURE_FRAGMENTATION == 1
     msg->_patch = _Z_NO_PATCH;
@@ -497,7 +469,7 @@ z_result_t _z_transport_message_encode(_z_wbuf_t *wbf, const _z_transport_messag
         case _Z_MID_T_KEEP_ALIVE: {
             return _z_keep_alive_encode(wbf, msg->_header, &msg->_body._keep_alive);
         } break;
-#if Z_FEATURE_MULTICAST_TRANSPORT == 1 || Z_FEATURE_RAWETH_TRANSPORT == 1
+#if Z_FEATURE_MULTICAST_TRANSPORT == 1
         case _Z_MID_T_JOIN: {
             return _z_join_encode(wbf, msg->_header, &msg->_body._join);
         } break;

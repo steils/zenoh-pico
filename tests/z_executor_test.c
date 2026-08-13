@@ -346,7 +346,7 @@ static void test_suspend_and_resume(void) {
 
     // Resume: task becomes runnable again.
     assert(_z_executor_resume_suspended_fut(&ex, &h));
-    assert(_z_executor_get_fut_status(&ex, &h) == _Z_FUT_STATUS_READY);
+    assert(_z_executor_get_fut_status(&ex, &h) == _Z_FUT_STATUS_RUNNING);
 
     // Before next spin: resumed task is in the ready deque.
     assert(_z_executor_get_status(&ex).status == _Z_EXECUTOR_STATE_READY_TO_EXECUTE_TASK);
@@ -484,6 +484,129 @@ static void test_spawn_fail_destroys_future(void) {
     _z_executor_destroy(&ex);
 }
 
+// ─── Tests: wakeup sleeping ──────────────────────────────────────────────────
+
+// A sleeping task can be woken up early: it is moved back to the ready deque and
+// runs on the next spin without waiting for its wake-up time.
+static void test_wakeup_sleeping(void) {
+    printf("Test: sleeping task woken up early runs on next spin\n");
+    _z_executor_t ex = _z_executor_new();
+    test_arg_t arg = {0};
+
+    _z_fut_t fut = _z_fut_new(&arg, fn_reschedule_timed, destroy_fn);
+    _z_fut_handle_t h = _z_executor_spawn(&ex, &fut);
+    assert(!_z_fut_handle_is_null(h));
+
+    // First spin: task runs once and sleeps for 500ms; nothing else is ready.
+    _z_executor_status_t r = _z_executor_spin(&ex);
+    assert(r.status == _Z_EXECUTOR_STATE_SHOULD_WAIT);
+    assert(arg.call_count == 1);
+    assert(_z_executor_get_fut_status(&ex, &h) == _Z_FUT_STATUS_SLEEPING);
+
+    // Wake it up before the 500ms elapse: task becomes runnable again.
+    assert(_z_executor_wakeup_sleeping_fut(&ex, &h));
+    assert(_z_executor_get_fut_status(&ex, &h) == _Z_FUT_STATUS_RUNNING);
+
+    // Before next spin: woken task is in the ready deque (no waiting required).
+    assert(_z_executor_get_status(&ex).status == _Z_EXECUTOR_STATE_READY_TO_EXECUTE_TASK);
+    // Next spin: task runs and finishes; nothing left.
+    r = _z_executor_spin(&ex);
+    assert(r.status == _Z_EXECUTOR_STATE_NO_TASKS);
+    assert(arg.call_count == 2);
+    assert(arg.destroyed == true);
+    assert(_z_executor_get_fut_status(&ex, &h) == _Z_FUT_STATUS_READY);
+
+    r = _z_executor_spin(&ex);
+    assert(r.status == _Z_EXECUTOR_STATE_NO_TASKS);
+
+    _z_executor_destroy(&ex);
+}
+
+// Waking a task that is not sleeping (running or already finished) is a safe no-op.
+static void test_wakeup_non_sleeping_is_noop(void) {
+    printf("Test: wakeup on non-sleeping task is a no-op\n");
+    _z_executor_t ex = _z_executor_new();
+    test_arg_t arg = {0};
+
+    _z_fut_t fut = _z_fut_new(&arg, fn_finish, destroy_fn);
+    _z_fut_handle_t h = _z_executor_spawn(&ex, &fut);
+    assert(!_z_fut_handle_is_null(h));
+
+    // Task is RUNNING (not yet executed), wakeup must be a no-op.
+    assert(!_z_executor_wakeup_sleeping_fut(&ex, &h));
+
+    drain(&ex, 10);
+    assert(arg.call_count == 1);
+
+    // Task is now gone (READY); wakeup must be a no-op.
+    assert(!_z_executor_wakeup_sleeping_fut(&ex, &h));
+
+    _z_executor_destroy(&ex);
+}
+
+// ─── Tests: resume-or-wakeup (combined) ──────────────────────────────────────
+
+// The combined API wakes both a suspended and a sleeping task, and they run to completion.
+static void test_resume_or_wakeup(void) {
+    printf("Test: resume_or_wakeup wakes both suspended and sleeping tasks\n");
+    _z_executor_t ex = _z_executor_new();
+
+    test_arg_t sus = {0};
+    _z_fut_t sus_fut = _z_fut_new(&sus, fn_suspend_once, destroy_fn);
+    _z_fut_handle_t sh = _z_executor_spawn(&ex, &sus_fut);
+    assert(!_z_fut_handle_is_null(sh));
+
+    test_arg_t slp = {0};
+    _z_fut_t slp_fut = _z_fut_new(&slp, fn_reschedule_timed, destroy_fn);
+    _z_fut_handle_t lh = _z_executor_spawn(&ex, &slp_fut);
+    assert(!_z_fut_handle_is_null(lh));
+
+    // Drain: the first task suspends, the second sleeps (500ms wake-up, not yet due).
+    drain(&ex, 10);
+    assert(sus.call_count == 1);
+    assert(slp.call_count == 1);
+    assert(_z_executor_get_fut_status(&ex, &sh) == _Z_FUT_STATUS_SUSPENDED);
+    assert(_z_executor_get_fut_status(&ex, &lh) == _Z_FUT_STATUS_SLEEPING);
+
+    // Combined call wakes the suspended task ...
+    assert(_z_executor_resume_suspended_or_wakeup_sleeping_fut(&ex, &sh));
+    assert(_z_executor_get_fut_status(&ex, &sh) == _Z_FUT_STATUS_RUNNING);
+    // ... and the sleeping task, without waiting for its 500ms wake-up time.
+    assert(_z_executor_resume_suspended_or_wakeup_sleeping_fut(&ex, &lh));
+    assert(_z_executor_get_fut_status(&ex, &lh) == _Z_FUT_STATUS_RUNNING);
+
+    // Both are now ready and finish on the next spins.
+    drain(&ex, 10);
+    assert(sus.call_count == 2);
+    assert(sus.destroyed == true);
+    assert(slp.call_count == 2);
+    assert(slp.destroyed == true);
+
+    _z_executor_destroy(&ex);
+}
+
+// The combined API is a no-op for tasks that are neither suspended nor sleeping.
+static void test_resume_or_wakeup_non_eligible_is_noop(void) {
+    printf("Test: resume_or_wakeup on running/finished task is a no-op\n");
+    _z_executor_t ex = _z_executor_new();
+    test_arg_t arg = {0};
+
+    _z_fut_t fut = _z_fut_new(&arg, fn_finish, destroy_fn);
+    _z_fut_handle_t h = _z_executor_spawn(&ex, &fut);
+    assert(!_z_fut_handle_is_null(h));
+
+    // Task is RUNNING (not yet executed): combined call must be a no-op.
+    assert(!_z_executor_resume_suspended_or_wakeup_sleeping_fut(&ex, &h));
+
+    drain(&ex, 10);
+    assert(arg.call_count == 1);
+
+    // Task is now gone (READY): combined call must be a no-op.
+    assert(!_z_executor_resume_suspended_or_wakeup_sleeping_fut(&ex, &h));
+
+    _z_executor_destroy(&ex);
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main(void) {
@@ -502,6 +625,10 @@ int main(void) {
     test_other_tasks_run_while_suspended();
     test_destroy_cleans_up_suspended();
     test_spawn_fail_destroys_future();
+    test_wakeup_sleeping();
+    test_wakeup_non_sleeping_is_noop();
+    test_resume_or_wakeup();
+    test_resume_or_wakeup_non_eligible_is_noop();
     printf("All executor tests passed.\n");
     return 0;
 }

@@ -43,7 +43,9 @@
 #if Z_FEATURE_LINK_TLS == 1
 #include "zenoh-pico/link/config/tls.h"
 #endif
+#if Z_FEATURE_RAWETH_TRANSPORT == 1
 #include "zenoh-pico/link/config/raweth.h"
+#endif
 
 /*------------------ Locator ------------------*/
 void _z_locator_init(_z_locator_t *locator) {
@@ -367,26 +369,14 @@ char *_z_endpoint_parse_port(const _z_string_t *addr) {
 }
 
 /*------------------ Endpoint ------------------*/
-void _z_endpoint_init(_z_endpoint_t *endpoint) {
-    _z_locator_init(&endpoint->_locator);
-    endpoint->_config = _z_str_intmap_make();
+_z_endpoint_t _z_endpoint_null(void) {
+    _z_endpoint_t ep = {0};
+    return ep;
 }
 
 void _z_endpoint_clear(_z_endpoint_t *ep) {
     _z_locator_clear(&ep->_locator);
     _z_str_intmap_clear(&ep->_config);
-}
-
-void _z_endpoint_free(_z_endpoint_t **ep) {
-    _z_endpoint_t *ptr = *ep;
-
-    if (ptr != NULL) {
-        _z_locator_clear(&ptr->_locator);
-        _z_str_intmap_clear(&ptr->_config);
-
-        z_free(ptr);
-        *ep = NULL;
-    }
 }
 
 z_result_t _z_endpoint_config_from_string(_z_str_intmap_t *strint, const _z_string_t *str, _z_string_t *proto) {
@@ -433,58 +423,16 @@ z_result_t _z_endpoint_config_from_string(_z_str_intmap_t *strint, const _z_stri
             return _z_tls_config_from_strn(strint, p_start, cfg_size);
         }
 #endif
+#if Z_FEATURE_RAWETH_TRANSPORT == 1
         cmp_str = _z_string_alias_str(RAWETH_SCHEMA);
         if (_z_string_equals(proto, &cmp_str)) {
             return _z_raweth_config_from_strn(strint, p_start, cfg_size);
         }
+#endif
+        return _Z_ERR_CONFIG_LOCATOR_SCHEMA_UNKNOWN;
     }
+    *strint = _z_str_intmap_make();
     return _Z_RES_OK;
-}
-
-size_t _z_endpoint_config_strlen(const _z_str_intmap_t *s, _z_string_t *proto) {
-    // Call the right configuration parser depending on the protocol
-    _z_string_t cmp_str = _z_string_null();
-#if Z_FEATURE_LINK_TCP == 1
-    cmp_str = _z_string_alias_str(TCP_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_tcp_config_strlen(s);
-    }
-#endif
-#if Z_FEATURE_LINK_UDP_UNICAST == 1 || Z_FEATURE_LINK_UDP_MULTICAST == 1
-    cmp_str = _z_string_alias_str(UDP_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_udp_config_strlen(s);
-    }
-#endif
-#if Z_FEATURE_LINK_BLUETOOTH == 1
-    cmp_str = _z_string_alias_str(BT_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_bt_config_strlen(s);
-    }
-#endif
-#if Z_FEATURE_LINK_SERIAL == 1
-    cmp_str = _z_string_alias_str(SERIAL_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_serial_config_strlen(s);
-    }
-#endif
-#if Z_FEATURE_LINK_WS == 1
-    cmp_str = _z_string_alias_str(WS_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_ws_config_strlen(s);
-    }
-#endif
-#if Z_FEATURE_LINK_TLS == 1
-    cmp_str = _z_string_alias_str(TLS_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_tls_config_strlen(s);
-    }
-#endif
-    cmp_str = _z_string_alias_str(RAWETH_SCHEMA);
-    if (_z_string_equals(proto, &cmp_str)) {
-        return _z_raweth_config_strlen(s);
-    }
-    return 0;
 }
 
 char *_z_endpoint_config_to_string(const _z_str_intmap_t *s, const _z_string_t *proto) {
@@ -527,15 +475,17 @@ char *_z_endpoint_config_to_string(const _z_str_intmap_t *s, const _z_string_t *
         return _z_tls_config_to_str(s);
     }
 #endif
+#if Z_FEATURE_RAWETH_TRANSPORT == 1
     cmp_str = _z_string_alias_str(RAWETH_SCHEMA);
     if (_z_string_equals(proto, &cmp_str)) {
         return _z_raweth_config_to_str(s);
     }
+#endif
     return NULL;
 }
 
 z_result_t _z_endpoint_from_string(_z_endpoint_t *ep, const _z_string_t *str) {
-    _z_endpoint_init(ep);
+    *ep = _z_endpoint_null();
     _Z_CLEAN_RETURN_IF_ERR(_z_locator_from_string(&ep->_locator, str), _z_endpoint_clear(ep));
     _Z_CLEAN_RETURN_IF_ERR(_z_endpoint_config_from_string(&ep->_config, str, &ep->_locator._protocol),
                            _z_endpoint_clear(ep));

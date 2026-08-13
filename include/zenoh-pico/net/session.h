@@ -29,7 +29,9 @@
 #include "zenoh-pico/session/queryable.h"
 #include "zenoh-pico/session/session.h"
 #include "zenoh-pico/session/subscription.h"
+#include "zenoh-pico/transport/transport.h"
 #include "zenoh-pico/utils/config.h"
+#include "zenoh-pico/utils/hash.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -120,7 +122,7 @@ _Z_INT_MAP_DEFINE(_z_connectivity_link_listener, _z_connectivity_link_listener_t
 
 typedef struct _z_query_id {
     uint32_t rid;
-    void *peer_id;
+    uint32_t peer_id;
 } _z_query_id_t;
 
 #define _ZP_HASHMAP_TEMPLATE_NAME _z_rid_to_count_hmap
@@ -128,24 +130,26 @@ typedef struct _z_query_id {
 #define _ZP_HASHMAP_TEMPLATE_VAL_TYPE uint32_t
 #define _ZP_HASHMAP_TEMPLATE_KEY_EQ_FN(query_id1, query_id2) \
     (((query_id1)->rid == (query_id2)->rid) && ((query_id1)->peer_id == (query_id2)->peer_id))
-#define _ZP_HASHMAP_TEMPLATE_KEY_HASH_FN(query_id) \
-    ((size_t)((query_id)->rid) ^ (size_t)(uintptr_t)((query_id)->peer_id))
+#define _ZP_HASHMAP_TEMPLATE_KEY_HASH_FN(query_id) _z_hash_combine((size_t)query_id->rid, (size_t)query_id->peer_id)
+#define _ZP_HASHMAP_TEMPLATE_INITIAL_CAPACITY 8
+#define _ZP_HASHMAP_TEMPLATE_INDEX_TYPE uint16_t
+#define _ZP_HASHMAP_TEMPLATE_ALLOC_FN z_malloc
+#define _ZP_HASHMAP_TEMPLATE_FREE_FN z_free
+#if defined(_ZP_PLATFORM_HAS_REALLOC)
+#define _ZP_HASHMAP_TEMPLATE_REALLOC_FN z_realloc
+#endif
 #include "zenoh-pico/collections/hashmap_template.h"
 
 typedef struct _z_session_t {
 #if Z_FEATURE_MULTI_THREAD == 1
     _z_mutex_t _mutex_inner;
-    _z_mutex_rec_t _mutex_transport;
 #if Z_FEATURE_ADMIN_SPACE == 1
     _z_mutex_t _mutex_admin_space;
 #endif
 #endif  // Z_FEATURE_MULTI_THREAD == 1
 
-    // Zenoh-pico is considering a single transport per session.
+    _z_transport_manager_t _transport_manager;
     z_whatami_t _mode;
-    _z_transport_t _tp;
-
-    // Zenoh PID
     _z_id_t _local_zid;
 
     // Session counters
@@ -158,10 +162,10 @@ typedef struct _z_session_t {
     _z_mutex_t _mutex_last_timestamp;
 #endif
 
-    // Session declarations
+    // Declared key-expressions
     _z_resource_slist_t *_local_resources;
+    _z_resource_slist_t *_remote_resources[Z_MAX_NUM_PEERS];
 
-    // Information for session restoring and asynchronous peer connection
     _z_config_t _config;
 
     // Session subscriptions
@@ -223,14 +227,12 @@ typedef struct _z_session_t {
  * Open a zenoh-net session
  *
  * Parameters:
- *     zn: A pointer of A :c:type:`_z_session_t` used as a return value.
- *     config: A set of properties. The caller keeps its ownership.
- *     zid: A pointer to Zenoh ID.
+ *     zn: A pointer to already configured A :c:type:`_z_session_t`.
  *
  * Returns:
  *     ``0`` in case of success, or a ``negative value`` in case of failure.
  */
-z_result_t _z_open(_z_session_rc_t *zn, _z_config_t *config, const _z_id_t *zid);
+z_result_t _z_open(_z_session_rc_t *zn);
 
 static inline _z_entity_global_id_t _z_session_get_id(const _z_session_t *zn) {
     _z_entity_global_id_t ret;
@@ -239,35 +241,21 @@ static inline _z_entity_global_id_t _z_session_get_id(const _z_session_t *zn) {
     return ret;
 }
 
-#if Z_FEATURE_AUTO_RECONNECT == 1
-void _z_client_reopen_task_drop(void *ztc_arg);
-_z_fut_fn_result_t _z_client_reopen_task_fn(void *ztc_arg, _z_executor_t *executor);
-#endif
-
 /**
  * Return true is session and all associated transports were closed.
  */
 bool _z_session_is_closed(const _z_session_t *session);
-
-/**
- * Return true if session is connected to at least one router peer.
- */
-bool _z_session_has_router_peer(const _z_session_t *session);
+#if Z_FEATURE_UNICAST_TRANSPORT == 1
+z_result_t _z_connect_via_connect_locators(_z_session_t *session);
+#endif
+#if Z_FEATURE_UNICAST_TRANSPORT == 1 && Z_FEATURE_SCOUTING == 1
+z_result_t _z_connect_first_via_scout(_z_session_t *session);
+#endif
 
 /**
  * Upgrade a weak session reference to a strong one if the session is open, otherwise return null.
  */
 _z_session_rc_t _z_session_weak_upgrade_if_open(const _z_session_weak_t *weak);
-/**
- * Get informations about an zenoh-net session.
- *
- * Parameters:
- *     session: A zenoh-net session. The caller keeps its ownership.
- *
- * Returns:
- *     A :c:type:`_z_config_t` map containing informations on the given zenoh-net session.
- */
-_z_config_t *_z_info(const _z_session_t *session);
 
 /*------------------ Zenoh-Pico Session Management Auxiliary ------------------*/
 /**
@@ -302,21 +290,12 @@ z_result_t _zp_send_keep_alive(_z_session_t *z);
  */
 z_result_t _zp_send_join(_z_session_t *z);
 
-z_result_t _zp_start_transport_tasks(_z_session_t *z);
 #if Z_FEATURE_CONNECTIVITY == 1
-void _z_connectivity_peer_connected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer,
-                                    bool is_multicast, uint16_t mtu, bool is_streamed, bool is_reliable);
+void _z_connectivity_peer_connected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer, uint16_t mtu,
+                                    bool is_streamed, bool is_reliable);
 void _z_connectivity_peer_disconnected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer,
-                                       bool is_multicast, uint16_t mtu, bool is_streamed, bool is_reliable);
-void _z_connectivity_peer_disconnected_from_transport(_z_session_t *session, const _z_transport_common_t *transport,
-                                                      const _z_connectivity_peer_event_data_t *peer, bool is_multicast);
+                                       uint16_t mtu, bool is_streamed, bool is_reliable);
 #endif
-
-static inline _z_session_t *_z_transport_common_get_session(_z_transport_common_t *transport) {
-    // the session should always outlive the transport, so it should be safe
-    // to access pointer directly without upgrade
-    return _z_session_weak_as_unsafe_ptr(&transport->_session);
-}
 
 #ifdef __cplusplus
 }

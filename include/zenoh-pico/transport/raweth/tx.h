@@ -15,18 +15,18 @@
 #ifndef ZENOH_PICO_RAWETH_TX_H
 #define ZENOH_PICO_RAWETH_TX_H
 
-#include "zenoh-pico/net/session.h"
-#include "zenoh-pico/transport/transport.h"
+#include "zenoh-pico/link/multicast_link.h"
+#include "zenoh-pico/protocol/definitions/network.h"
+#include "zenoh-pico/protocol/definitions/transport.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-z_result_t _z_raweth_link_send_t_msg(const _z_link_t *zl, const _z_transport_message_t *t_msg);
-z_result_t _z_raweth_send_n_msg(_z_session_t *zn, const _z_network_message_t *z_msg, z_reliability_t reliability,
-                                z_congestion_control_t cong_ctrl);
-z_result_t _z_raweth_send_t_msg(_z_transport_common_t *ztc, const _z_transport_message_t *t_msg);
-
+#if Z_FEATURE_MULTICAST_TRANSPORT == 1 && Z_FEATURE_RAWETH_TRANSPORT == 1
+void _z_raweth_wbf_and_link_prepare(_z_wbuf_t *wbf, _z_multicast_link_raweth_t *zl, const _z_network_message_t *n_msg);
+void _z_raweth_wbuf_and_link_finalize(_z_wbuf_t *wbf, _z_multicast_link_raweth_t *zl);
+#endif /* Z_FEATURE_MULTICAST_TRANSPORT == 1 && Z_FEATURE_RAWETH_TRANSPORT == 1 */
 #ifdef __cplusplus
 }
 #endif

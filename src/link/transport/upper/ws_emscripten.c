@@ -95,18 +95,6 @@ static z_result_t _z_ws_emscripten_open(_z_sys_net_socket_t *sock, const _z_sys_
     return ret;
 }
 
-static z_result_t _z_ws_emscripten_listen(_z_sys_net_socket_t *sock, const _z_sys_net_endpoint_t lep) {
-    z_result_t ret = _Z_RES_OK;
-    _ZP_UNUSED(sock);
-    _ZP_UNUSED(lep);
-
-    // @TODO: To be implemented
-    _Z_ERROR_LOG(_Z_ERR_GENERIC);
-    ret = _Z_ERR_GENERIC;
-
-    return ret;
-}
-
 static void _z_ws_emscripten_close(_z_sys_net_socket_t *sock) { close(sock->_ws._fd); }
 
 static size_t _z_ws_emscripten_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
@@ -121,24 +109,6 @@ static size_t _z_ws_emscripten_read(const _z_sys_net_socket_t sock, uint8_t *ptr
         rb = SIZE_MAX;
     }
     return (size_t)rb;
-}
-
-static size_t _z_ws_emscripten_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_ws_emscripten_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
 }
 
 static size_t _z_ws_emscripten_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
@@ -174,28 +144,18 @@ z_result_t _z_ws_endpoint_init(_z_sys_net_endpoint_t *ep, const _z_string_t *add
 
 void _z_ws_endpoint_clear(_z_sys_net_endpoint_t *ep) { _z_ws_emscripten_free_endpoint(ep); }
 
-z_result_t _z_ws_transport_open(_z_ws_socket_t *sock, uint32_t tout) {
-    return _z_ws_emscripten_open(&sock->_sock, sock->_rep, tout);
+z_result_t _z_ws_transport_open(_z_sys_net_socket_t *sock, const _z_sys_net_endpoint_t endpoint, uint32_t tout) {
+    return _z_ws_emscripten_open(sock, endpoint, tout);
 }
 
-z_result_t _z_ws_transport_listen(_z_ws_socket_t *sock) { return _z_ws_emscripten_listen(&sock->_sock, sock->_rep); }
+void _z_ws_transport_close(_z_sys_net_socket_t *sock) { _z_ws_emscripten_close(sock); }
 
-void _z_ws_transport_close(_z_ws_socket_t *sock) { _z_ws_emscripten_close(&sock->_sock); }
-
-size_t _z_ws_transport_read(const _z_ws_socket_t *sock, uint8_t *ptr, size_t len) {
-    return _z_ws_emscripten_read(sock->_sock, ptr, len);
+size_t _z_ws_transport_read(const _z_sys_net_socket_t *sock, uint8_t *ptr, size_t len) {
+    return _z_ws_emscripten_read(*sock, ptr, len);
 }
 
-size_t _z_ws_transport_read_exact(const _z_ws_socket_t *sock, uint8_t *ptr, size_t len) {
-    return _z_ws_emscripten_read_exact(sock->_sock, ptr, len);
-}
-
-size_t _z_ws_transport_write(const _z_ws_socket_t *sock, const uint8_t *ptr, size_t len) {
-    return _z_ws_emscripten_write(sock->_sock, ptr, len);
-}
-
-size_t _z_ws_transport_read_socket(const _z_sys_net_socket_t socket, uint8_t *ptr, size_t len) {
-    return _z_ws_emscripten_read(socket, ptr, len);
+size_t _z_ws_transport_write(const _z_sys_net_socket_t *sock, const uint8_t *ptr, size_t len) {
+    return _z_ws_emscripten_write(*sock, ptr, len);
 }
 
 #else

@@ -113,8 +113,45 @@ z_result_t _z_background_executor_inner_cancel_fut(_z_background_executor_inner_
         return _z_executor_cancel_fut(&be->_executor, handle) ? _Z_RES_OK : _Z_ERR_INVALID;
     } else {
         _Z_RETURN_IF_ERR(_z_background_executor_inner_suspend_and_lock(be, false));
-        _z_executor_cancel_fut(&be->_executor, handle);
-        return _z_background_executor_inner_unlock_and_resume(be);
+        bool success = _z_executor_cancel_fut(&be->_executor, handle);
+        z_result_t ret = _z_background_executor_inner_unlock_and_resume(be);
+        return success ? ret : _Z_ERR_INVALID;
+    }
+}
+
+z_result_t _z_background_executor_inner_resume_suspended_fut(_z_background_executor_inner_t *be,
+                                                             const _z_fut_handle_t *handle) {
+    if (_is_called_from_executor(be)) {
+        return _z_executor_resume_suspended_fut(&be->_executor, handle) ? _Z_RES_OK : _Z_ERR_INVALID;
+    } else {
+        _Z_RETURN_IF_ERR(_z_background_executor_inner_suspend_and_lock(be, false));
+        bool success = _z_executor_resume_suspended_fut(&be->_executor, handle);
+        z_result_t ret = _z_background_executor_inner_unlock_and_resume(be);
+        return success ? ret : _Z_ERR_INVALID;
+    }
+}
+
+z_result_t _z_background_executor_inner_resume_suspended_or_wakeup_sleeping_fut(_z_background_executor_inner_t *be,
+                                                                                const _z_fut_handle_t *handle) {
+    if (_is_called_from_executor(be)) {
+        return _z_executor_resume_suspended_or_wakeup_sleeping_fut(&be->_executor, handle) ? _Z_RES_OK : _Z_ERR_INVALID;
+    } else {
+        _Z_RETURN_IF_ERR(_z_background_executor_inner_suspend_and_lock(be, false));
+        bool success = _z_executor_resume_suspended_or_wakeup_sleeping_fut(&be->_executor, handle);
+        z_result_t ret = _z_background_executor_inner_unlock_and_resume(be);
+        return success ? ret : _Z_ERR_INVALID;
+    }
+}
+
+z_result_t _z_background_executor_inner_wakeup_sleeping_fut(_z_background_executor_inner_t *be,
+                                                            const _z_fut_handle_t *handle) {
+    if (_is_called_from_executor(be)) {
+        return _z_executor_wakeup_sleeping_fut(&be->_executor, handle) ? _Z_RES_OK : _Z_ERR_INVALID;
+    } else {
+        _Z_RETURN_IF_ERR(_z_background_executor_inner_suspend_and_lock(be, false));
+        bool success = _z_executor_wakeup_sleeping_fut(&be->_executor, handle);
+        z_result_t ret = _z_background_executor_inner_unlock_and_resume(be);
+        return success ? ret : _Z_ERR_INVALID;
     }
 }
 
@@ -256,6 +293,28 @@ z_result_t _z_background_executor_get_fut_status(_z_background_executor_t *be, c
         return _Z_ERR_INVALID;
     }
     return _z_background_executor_inner_get_fut_status(_Z_RC_IN_VAL(&be->_inner), handle, status_out);
+}
+
+z_result_t _z_background_executor_resume_suspended_fut(_z_background_executor_t *be, const _z_fut_handle_t *handle) {
+    if (_Z_RC_IS_NULL(&be->_inner)) {
+        return _Z_ERR_INVALID;
+    }
+    return _z_background_executor_inner_resume_suspended_fut(_Z_RC_IN_VAL(&be->_inner), handle);
+}
+
+z_result_t _z_background_executor_wakeup_sleeping_fut(_z_background_executor_t *be, const _z_fut_handle_t *handle) {
+    if (_Z_RC_IS_NULL(&be->_inner)) {
+        return _Z_ERR_INVALID;
+    }
+    return _z_background_executor_inner_wakeup_sleeping_fut(_Z_RC_IN_VAL(&be->_inner), handle);
+}
+
+z_result_t _z_background_executor_resume_suspended_or_wakeup_sleeping_fut(_z_background_executor_t *be,
+                                                                          const _z_fut_handle_t *handle) {
+    if (_Z_RC_IS_NULL(&be->_inner)) {
+        return _Z_ERR_INVALID;
+    }
+    return _z_background_executor_inner_resume_suspended_or_wakeup_sleeping_fut(_Z_RC_IN_VAL(&be->_inner), handle);
 }
 
 z_result_t _z_background_executor_cancel_fut(_z_background_executor_t *be, const _z_fut_handle_t *handle) {

@@ -19,16 +19,13 @@
 #include <stdint.h>
 
 #include "zenoh-pico/collections/string.h"
+#include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/system/platform.h"
+#include "zenoh-pico/utils/result.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct {
-    _z_sys_net_socket_t _sock;
-    _z_sys_net_endpoint_t _rep;
-} _z_tcp_socket_t;
 
 char *_z_tcp_address_parse_host(const _z_string_t *address);
 z_result_t _z_tcp_address_valid(const _z_string_t *address);
@@ -44,9 +41,30 @@ void _z_tcp_close(_z_sys_net_socket_t *sock);
 
 // flawfinder: ignore
 size_t _z_tcp_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len);
-size_t _z_tcp_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len);
 size_t _z_tcp_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len);
+z_result_t _z_endpoint_tcp_valid(const _z_endpoint_t *endpoint);
 
+typedef struct _z_unicast_link_tcp_t {
+    _z_sys_net_socket_t _sock;
+} _z_unicast_link_tcp_t;
+
+typedef struct _z_unicast_listener_tcp_t {
+    _z_sys_net_socket_t _sock;
+} _z_unicast_listener_tcp_t;
+
+bool _z_unicast_link_tcp_read(_z_unicast_link_tcp_t *tcp, uint8_t *ptr, size_t *len);
+bool _z_unicast_link_tcp_write(_z_unicast_link_tcp_t *tcp, const uint8_t *ptr, size_t *len);
+z_result_t _z_unicast_listener_tcp_create(_z_unicast_listener_tcp_t *listener, const _z_endpoint_t *endpoint);
+z_result_t _z_unicast_listener_tcp_accept(_z_unicast_listener_tcp_t *listener, _z_unicast_link_tcp_t *link);
+z_result_t _z_unicast_link_tcp_create(_z_unicast_link_tcp_t *tcp, const _z_endpoint_t *endpoint);
+void _z_unicast_link_tcp_clear(_z_unicast_link_tcp_t *tcp);
+void _z_unicast_listener_tcp_clear(_z_unicast_listener_tcp_t *listener);
+uint16_t _z_unicast_link_tcp_get_mtu(const _z_unicast_link_tcp_t *tcp);
+bool _z_unicast_link_tcp_is_reliable(const _z_unicast_link_tcp_t *tcp);
+bool _z_unicast_link_tcp_is_streamed(const _z_unicast_link_tcp_t *tcp);
+z_result_t _z_unicast_link_tcp_get_endpoints(const _z_unicast_link_tcp_t *tcp, char *local, size_t local_len,
+                                             char *remote, size_t remote_len);
+_z_sys_net_socket_t *_z_unicast_link_tcp_get_sock(_z_unicast_link_tcp_t *tcp);
 #ifdef __cplusplus
 }
 #endif

@@ -12,77 +12,54 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
+#include "zenoh-pico/link/transport/serial.h"
+
 #include <stddef.h>
 
 #include "zenoh-pico/config.h"
-#include "zenoh-pico/link/manager.h"
+#include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/link/transport/serial_protocol.h"
 
 #if Z_FEATURE_LINK_SERIAL == 1
 
-z_result_t _z_endpoint_serial_valid(_z_endpoint_t *endpoint) { return _z_serial_endpoint_valid(endpoint); }
+z_result_t _z_endpoint_serial_valid(const _z_endpoint_t *endpoint) { return _z_serial_endpoint_valid(endpoint); }
 
-z_result_t _z_f_link_open_serial(_z_link_t *self) {
-    return _z_serial_protocol_open(&self->_socket._serial, &self->_endpoint);
+bool _z_unicast_link_serial_read(_z_unicast_link_serial_t *serial, uint8_t *ptr, size_t *len) {
+    *len = _z_read_serial(serial->_sock, ptr, *len);
+    return *len != SIZE_MAX;
 }
 
-z_result_t _z_f_link_listen_serial(_z_link_t *self) {
-    return _z_serial_protocol_listen(&self->_socket._serial, &self->_endpoint);
+bool _z_unicast_link_serial_write(_z_unicast_link_serial_t *serial, const uint8_t *ptr, size_t *len) {
+    *len = _z_send_serial(serial->_sock, ptr, *len);
+    return *len != SIZE_MAX;
 }
 
-void _z_f_link_close_serial(_z_link_t *self) { _z_serial_protocol_close(&self->_socket._serial); }
-
-void _z_f_link_free_serial(_z_link_t *self) { (void)(self); }
-
-size_t _z_f_link_write_serial(const _z_link_t *self, const uint8_t *ptr, size_t len, _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(socket);
-    return _z_send_serial(self->_socket._serial._sock, ptr, len);
+z_result_t _z_unicast_link_serial_create(_z_unicast_link_serial_t *serial, const _z_endpoint_t *endpoint) {
+    return _z_serial_protocol_open(&serial->_sock, endpoint, true);
 }
 
-size_t _z_f_link_write_all_serial(const _z_link_t *self, const uint8_t *ptr, size_t len) {
-    return _z_send_serial(self->_socket._serial._sock, ptr, len);
+void _z_unicast_link_serial_clear(_z_unicast_link_serial_t *serial) { _z_serial_close(&serial->_sock); }
+
+uint16_t _z_unicast_link_serial_get_mtu(const _z_unicast_link_serial_t *serial) {
+    _ZP_UNUSED(serial);
+    return _Z_SERIAL_MTU_SIZE;
 }
 
-size_t _z_f_link_read_serial(const _z_link_t *self, uint8_t *ptr, size_t len, _z_slice_t *addr) {
-    _ZP_UNUSED(addr);
-    return _z_read_serial(self->_socket._serial._sock, ptr, len);
+bool _z_unicast_link_serial_is_reliable(const _z_unicast_link_serial_t *serial) {
+    _ZP_UNUSED(serial);
+    return false;
 }
 
-size_t _z_f_link_read_exact_serial(const _z_link_t *self, uint8_t *ptr, size_t len, _z_slice_t *addr,
-                                   _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(addr);
-    _ZP_UNUSED(socket);
-    return _z_read_exact_serial(self->_socket._serial._sock, ptr, len);
+bool _z_unicast_link_serial_is_streamed(const _z_unicast_link_serial_t *serial) {
+    _ZP_UNUSED(serial);
+    return false;
 }
 
-size_t _z_f_link_read_socket_serial(const _z_sys_net_socket_t socket, uint8_t *ptr, size_t len) {
-    return _z_read_serial(socket, ptr, len);
+z_result_t _z_unicast_link_serial_get_endpoints(const _z_unicast_link_serial_t *serial, char *local, size_t local_len,
+                                                char *remote, size_t remote_len) {
+    return _z_socket_get_endpoints(&serial->_sock, local, local_len, remote, remote_len);
 }
 
-uint16_t _z_get_link_mtu_serial(void) { return _Z_SERIAL_MTU_SIZE; }
+_z_sys_net_socket_t *_z_unicast_link_serial_get_sock(_z_unicast_link_serial_t *serial) { return &serial->_sock; }
 
-z_result_t _z_new_link_serial(_z_link_t *zl, _z_endpoint_t endpoint) {
-    z_result_t ret = _Z_RES_OK;
-    zl->_type = _Z_LINK_TYPE_SERIAL;
-    zl->_cap._transport = Z_LINK_CAP_TRANSPORT_UNICAST;
-    zl->_cap._flow = Z_LINK_CAP_FLOW_DATAGRAM;
-    zl->_cap._is_reliable = false;
-
-    zl->_mtu = _z_get_link_mtu_serial();
-
-    zl->_endpoint = endpoint;
-
-    zl->_open_f = _z_f_link_open_serial;
-    zl->_listen_f = _z_f_link_listen_serial;
-    zl->_close_f = _z_f_link_close_serial;
-    zl->_free_f = _z_f_link_free_serial;
-
-    zl->_write_f = _z_f_link_write_serial;
-    zl->_write_all_f = _z_f_link_write_all_serial;
-    zl->_read_f = _z_f_link_read_serial;
-    zl->_read_exact_f = _z_f_link_read_exact_serial;
-    zl->_read_socket_f = _z_f_link_read_socket_serial;
-
-    return ret;
-}
 #endif

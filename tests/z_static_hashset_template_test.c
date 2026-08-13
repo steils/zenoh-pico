@@ -422,7 +422,7 @@ static void test_algorithms_remove(void) {
         uint32_t k = i;
         assert(u32set_insert(&s, &k) != u32set_end(&s));
     }
-    _ZP_REMOVE(u32set, &s, *_ % 2 != 0);
+    _ZP_REMOVE_ALL(u32set, &s, *_ % 2 != 0);
     assert(u32set_size(&s) == N / 2);
     for (uint32_t i = 0; i < N; i++) {
         assert(u32set_contains(&s, &i) == (i % 2 == 0));

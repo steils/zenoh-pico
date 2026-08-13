@@ -12,21 +12,30 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
-#ifndef ZENOH_PICO_UNICAST_RX_H
-#define ZENOH_PICO_UNICAST_RX_H
+#ifndef ZENOH_PICO_UNICAST_TRANSPORT_RX_H
+#define ZENOH_PICO_UNICAST_TRANSPORT_RX_H
 
-#include "zenoh-pico/transport/transport.h"
+#include <stddef.h>
+
+#include "zenoh-pico/link/unicast_link.h"
+#include "zenoh-pico/protocol/definitions/transport.h"
+#include "zenoh-pico/system/platform.h"
+#include "zenoh-pico/transport/rx.h"
+#include "zenoh-pico/transport/unicast/transport.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-z_result_t _z_unicast_recv_t_msg(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg);
-z_result_t _z_unicast_handle_transport_message(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg,
-                                               _z_transport_peer_unicast_t *peer);
+#if Z_FEATURE_UNICAST_TRANSPORT == 1
+z_result_t _z_unicast_link_recv_t_msg(_z_unicast_link_t *link, _z_transport_message_t *t_msg, _z_zbuf_t *zbf,
+                                      z_clock_t recv_deadline);
 
+z_result_t _z_unicast_transport_manager_read(_z_unicast_transport_manager_t *manager,
+                                             const _z_ready_links_mask_bitset_t *ready_links);
+#endif
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZENOH_PICO_UNICAST_RX_H */
+#endif /* ZENOH_PICO_UNICAST_TRANSPORT_RX_H */

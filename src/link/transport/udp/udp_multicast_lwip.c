@@ -80,14 +80,9 @@ void _z_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *
     _z_lwip_udp_multicast_close(sockrecv, socksend, rep, lep);
 }
 
-size_t _z_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *ep) {
-    return _z_lwip_udp_multicast_read_exact(sock, ptr, len, lep, ep);
-}
-
 size_t _z_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *ep) {
-    return _z_lwip_udp_multicast_read(sock, ptr, len, lep, ep);
+                             _z_link_address_t *ep_out) {
+    return _z_lwip_udp_multicast_read(sock, ptr, len, lep, ep_out);
 }
 
 size_t _z_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

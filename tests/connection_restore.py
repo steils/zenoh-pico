@@ -9,7 +9,7 @@ import urllib.request
 
 ROUTER_INIT_TIMEOUT_S = 3
 WAIT_MESSAGE_TIMEOUT_S = 15
-DISCONNECT_MESSAGES = ["Closing session because it has expired", "Send keep alive failed"]
+DISCONNECT_MESSAGES = ["Lease expired for unicast peer", "Send keep alive failed"]
 CONNECT_MESSAGES = ["Z_OPEN(Ack)"]
 LIVELINESS_TOKEN_ALIVE_MESSAGES = ["[LivelinessSubscriber] New alive token"]
 LIVELINESS_TOKEN_DROP_MESSAGES = ["[LivelinessSubscriber] Dropped token"]

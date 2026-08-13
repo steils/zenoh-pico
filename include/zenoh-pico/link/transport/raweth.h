@@ -18,6 +18,8 @@
 #include <stdint.h>
 
 #include "zenoh-pico/collections/string.h"
+#include "zenoh-pico/link/address.h"
+#include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/system/platform.h"
 
 #ifdef __cplusplus
@@ -84,16 +86,27 @@ typedef struct {
     uint8_t _dmac[_ZP_MAC_ADDR_LENGTH];
     uint8_t _smac[_ZP_MAC_ADDR_LENGTH];
     bool _has_vlan;
-} _z_raweth_socket_t;
+} _z_multicast_link_raweth_t;
+
+z_result_t _z_endpoint_raweth_multicast_valid(_z_endpoint_t *endpoint);
 
 z_result_t _z_open_raweth(_z_sys_net_socket_t *sock, const char *interface);
 size_t _z_send_raweth(const _z_sys_net_socket_t *sock, const void *buff, size_t buff_len);
-size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buff_len, _z_slice_t *addr,
+size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buff_len, _z_link_address_t *addr,
                          const _zp_raweth_whitelist_array_t *whitelist);
 z_result_t _z_close_raweth(_z_sys_net_socket_t *sock);
 uint16_t _z_raweth_ntohs(uint16_t val);
 uint16_t _z_raweth_htons(uint16_t val);
 
+bool _z_multicast_link_raweth_read(_z_multicast_link_raweth_t *raweth, uint8_t *ptr, size_t *len,
+                                   _z_link_address_t *addr_out);
+bool _z_multicast_link_raweth_write(_z_multicast_link_raweth_t *raweth, const uint8_t *ptr, size_t *len);
+z_result_t _z_multicast_link_raweth_create(_z_multicast_link_raweth_t *raweth, const _z_endpoint_t *endpoint);
+void _z_multicast_link_raweth_clear(_z_multicast_link_raweth_t *raweth);
+uint16_t _z_multicast_link_raweth_get_mtu(const _z_multicast_link_raweth_t *raweth);
+bool _z_multicast_link_raweth_is_reliable(const _z_multicast_link_raweth_t *raweth);
+bool _z_multicast_link_raweth_is_streamed(const _z_multicast_link_raweth_t *raweth);
+_z_sys_net_socket_t *_z_multicast_link_raweth_get_sock(_z_multicast_link_raweth_t *raweth);
 #endif
 
 #ifdef __cplusplus

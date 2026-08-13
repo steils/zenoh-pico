@@ -118,24 +118,6 @@ static size_t _z_udp_freertos_plus_tcp_read(_z_sys_net_socket_t sock, uint8_t *p
     return (size_t)rb;
 }
 
-static size_t _z_udp_freertos_plus_tcp_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_udp_freertos_plus_tcp_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
-}
-
 static size_t _z_udp_freertos_plus_tcp_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
                                              const _z_sys_net_endpoint_t endpoint) {
     return (size_t)FreeRTOS_sendto(sock._socket, ptr, len, 0, endpoint._iptcp->ai_addr, endpoint._iptcp->ai_addrlen);
@@ -159,10 +141,6 @@ void _z_udp_unicast_close(_z_sys_net_socket_t *sock) { _z_udp_freertos_plus_tcp_
 
 size_t _z_udp_unicast_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
     return _z_udp_freertos_plus_tcp_read(sock, ptr, len);
-}
-
-size_t _z_udp_unicast_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    return _z_udp_freertos_plus_tcp_read_exact(sock, ptr, len);
 }
 
 size_t _z_udp_unicast_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

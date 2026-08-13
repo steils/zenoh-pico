@@ -57,6 +57,7 @@ z_result_t _z_open_raweth(_z_sys_net_socket_t *sock, const char *interface) {
     memset(&if_idx, 0, sizeof(struct ifreq));
     strncpy(if_idx.ifr_name, interface, strlen(interface));
     if (ioctl(sock->_fd, SIOCGIFINDEX, &if_idx) < 0) {
+        close(sock->_fd);
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
     // Bind the socket
@@ -93,7 +94,7 @@ size_t _z_send_raweth(const _z_sys_net_socket_t *sock, const void *buff, size_t 
     return (size_t)wb;
 }
 
-size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buff_len, _z_slice_t *addr,
+size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buff_len, _z_link_address_t *addr,
                          const _zp_raweth_whitelist_array_t *whitelist) {
     // Read from socket
     ssize_t bytesRead = recvfrom(sock->_fd, buff, buff_len, 0, NULL, NULL);
@@ -102,9 +103,9 @@ size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buf
     }
     bool is_valid = true;
     // Address filtering (only if there is a whitelist)
+    const _zp_eth_header_t *header = (_zp_eth_header_t *)buff;
     if (_zp_raweth_whitelist_array_len(whitelist) > 0) {
         is_valid = false;
-        const _zp_eth_header_t *header = (_zp_eth_header_t *)buff;
         for (size_t i = 0; i < _zp_raweth_whitelist_array_len(whitelist); i++) {
             const _zp_raweth_whitelist_entry_t *entry = _zp_raweth_whitelist_array_get(whitelist, i);
             if (memcmp(&header->smac, entry->_mac, _ZP_MAC_ADDR_LENGTH) == 0) {
@@ -119,9 +120,7 @@ size_t _z_receive_raweth(const _z_sys_net_socket_t *sock, void *buff, size_t buf
     }
     // Copy sender mac if needed
     if (addr != NULL) {
-        uint8_t *header_addr = (uint8_t *)buff;
-        addr->len = sizeof(ETH_ALEN);
-        (void)memcpy((uint8_t *)addr->start, (header_addr + ETH_ALEN), sizeof(ETH_ALEN));
+        _z_link_address_append(addr, header->smac, _ZP_MAC_ADDR_LENGTH);
     }
     return (size_t)bytesRead;
 }

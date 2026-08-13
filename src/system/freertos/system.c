@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 
 #if defined(ZENOH_FREERTOS_PLUS_TCP)
@@ -69,13 +70,6 @@ void *z_malloc(size_t size) {
         return NULL;
     }
     return pvPortMalloc(size);
-}
-
-void *z_realloc(void *ptr, size_t size) {
-    _ZP_UNUSED(ptr);
-    _ZP_UNUSED(size);
-    // realloc not implemented in FreeRTOS
-    return NULL;
 }
 
 void z_free(void *ptr) { vPortFree(ptr); }
@@ -350,6 +344,16 @@ z_result_t z_sleep_s(size_t time) {
 
 /*------------------ Clock ------------------*/
 z_clock_t z_clock_now(void) { return xTaskGetTickCount(); }
+
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (*l < *r) {
+        return -1;
+    } else if (*l > *r) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
 
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {
     return zp_clock_elapsed_ms_since(instant, epoch) * 1000;

@@ -15,134 +15,171 @@
 #ifndef ZENOH_PICO_UTILS_PROPERTY_H
 #define ZENOH_PICO_UTILS_PROPERTY_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
-#include "zenoh-pico/collections/intmap.h"
+#include "zenoh-pico/api/constants.h"
 #include "zenoh-pico/collections/string.h"
+#include "zenoh-pico/config.h"
+#include "zenoh-pico/protocol/core.h"
 #include "zenoh-pico/utils/result.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Properties returned by _z_info()
-#define Z_INFO_PID_KEY 0x00
-#define Z_INFO_PEER_PID_KEY 0x01
-#define Z_INFO_ROUTER_PID_KEY 0x02
+#if Z_FEATURE_UNICAST_TRANSPORT == 1
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE const char *
+#define _ZP_STATIC_VECTOR_TEMPLATE_NAME _z_config_connect_vec
+#define _ZP_STATIC_VECTOR_TEMPLATE_SIZE Z_MAX_NUM_UNICAST_PEERS
+#include "zenoh-pico/collections/static_vector_template.h"
+#endif
+
+#if Z_FEATURE_UNICAST_PEER == 1 || Z_FEATURE_MULTICAST_TRANSPORT == 1
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE const char *
+#define _ZP_STATIC_VECTOR_TEMPLATE_NAME _z_config_listen_vec
+#define _ZP_STATIC_VECTOR_TEMPLATE_SIZE Z_MAX_NUM_LISTENERS
+#include "zenoh-pico/collections/static_vector_template.h"
+#endif
+
+typedef struct {
+    const char *_str;
+    bool _parsed;
+} _z_config_bool_t;
+
+typedef struct {
+    const char *_str;
+    uint32_t _parsed;
+} _z_config_uint_t;
+
+typedef struct {
+    const char *_str;
+    z_whatami_t _parsed;
+} _z_config_mode_t;
+
+typedef struct {
+    const char *_str;
+    z_what_t _parsed;
+} _z_config_what_t;
+
+typedef struct {
+    const char *_str;
+    _z_id_t _parsed;
+} _z_config_zid_t;
 
 /**
- * Zenoh-net properties are represented as int-string map.
+ * Zenoh-net configuration represented as a struct with one dedicated field per property.
+ *
+ * Plain string properties are stored as non-owning pointers to a null-terminated C
+ * string (typically a compile-time constant) and are `NULL` when the corresponding
+ * property is not set. Typed properties (boolean, integer, mode, what, zid) keep the
+ * original string in their `_str` member (also non-owning, `NULL` when unset) alongside
+ * the parsed value, which is validated at insert time and pre-filled with its default
+ * by `_z_config_init`. The configuration does not take ownership of the strings, so no
+ * copying or freeing is performed. The `_connect` property accepts multiple values and
+ * is therefore stored as a fixed-capacity vector of strings.
  */
-typedef _z_str_intmap_t _z_config_t;
+typedef struct {
+    // Session properties
+    _z_config_mode_t _mode;
+#if Z_FEATURE_UNICAST_TRANSPORT == 1
+    _z_config_connect_vec_t _connect;
+    _z_config_uint_t _connect_timeout;
+    _z_config_bool_t _connect_exit_on_failure;
+#endif
+#if Z_FEATURE_UNICAST_PEER == 1 || Z_FEATURE_MULTICAST_TRANSPORT == 1
+    _z_config_listen_vec_t _listen;
+    _z_config_bool_t _listen_exit_on_failure;
+#endif
+    const char *_user;
+    const char *_password;
+    _z_config_bool_t _multicast_scouting;
+    const char *_multicast_locator;
+    _z_config_uint_t _scouting_timeout;
+    _z_config_what_t _scouting_what;
+    _z_config_zid_t _session_zid;
+    _z_config_bool_t _add_timestamp;
+    // TLS properties
+    const char *_tls_root_ca_certificate;
+    const char *_tls_root_ca_certificate_base64;
+    const char *_tls_listen_private_key;
+    const char *_tls_listen_private_key_base64;
+    const char *_tls_listen_certificate;
+    const char *_tls_listen_certificate_base64;
+    _z_config_bool_t _tls_enable_mtls;
+    const char *_tls_connect_private_key;
+    const char *_tls_connect_private_key_base64;
+    const char *_tls_connect_certificate;
+    const char *_tls_connect_certificate_base64;
+    _z_config_bool_t _tls_verify_name_on_connect;
+} _z_config_t;
 
 /**
- * Initialize a new empty map of properties.
+ * Initialize a new empty configuration.
  */
-z_result_t _z_config_init(_z_config_t *ps);
+void _z_config_init(_z_config_t *ps);
 
 /**
- * Insert a property with a given key to a properties map.
- * If a property with the same key already exists in the properties map, it is replaced.
+ * Insert a property with a given key into the configuration.
+ * If a property with the same key already exists, it is replaced.
+ *
+ * The configuration stores @p value as a non-owning pointer, so the caller must
+ * ensure the referenced string outlives the configuration (typically a
+ * compile-time string constant).
  *
  * Parameters:
- *   ps: A pointer to the properties map.
+ *   ps: A pointer to the configuration.
  *   key: The key of the property to add.
  *   value: The value of the property to add.
  */
 z_result_t _zp_config_insert(_z_config_t *ps, uint8_t key, const char *value);
-z_result_t _zp_config_insert_string(_z_config_t *ps, uint8_t key, const _z_string_t *value);
 
 /**
- * Get the property with the given key from a properties map.
+ * Get the property with the given key from the configuration.
  *
  * Parameters:
- *     ps: A pointer to properties map.
+ *     ps: A pointer to the configuration.
  *     key: The key of the property.
  *
  * Returns:
- *     The value of the property with key ``key`` in properties map ``ps``.
+ *     The non-owning value of the property with key ``key`` in configuration ``ps``.
  */
-char *_z_config_get(const _z_config_t *ps, uint8_t key);
-z_result_t _z_config_get_all(const _z_config_t *ps, _z_string_svec_t *locators, uint8_t key);
+const char *_z_config_get(const _z_config_t *ps, uint8_t key);
 
 /**
- * Retrieve a signed 32-bit integer property from the configuration.
- * If the property is not present, the provided default value is used.
- *
- * The value is parsed as a base-10 integer and validated to ensure it
- * fits within the range of int32_t.
+ * Check if a configuration is empty.
  *
  * Parameters:
- *   config: A pointer to the configuration object.
- *   key: The key of the property to retrieve.
- *   default_val: The default value to use if the property is not present.
- *   out: A pointer to store the parsed result.
- */
-z_result_t _z_config_get_i32_default(_z_config_t *config, uint8_t key, const char *default_val, int32_t *out);
-
-/**
- * Retrieve a boolean property from the configuration.
- * If the property is not present, the provided default value is used.
- *
- * Accepted values are "true" and "false".
- *
- * Parameters:
- *   config: A pointer to the configuration object.
- *   key: The key of the property to retrieve.
- *   default_val: The default value to use if the property is not present.
- *   out: A pointer to store the parsed result.
- */
-z_result_t _z_config_get_bool_default(_z_config_t *config, uint8_t key, const char *default_val, bool *out);
-
-/**
- * Get the length of the given properties map.
- *
- * Parameters:
- *     ps: A pointer to the properties map.
+ *   ps: A pointer to the configuration.
  *
  * Returns:
- *     The length of the given properties map.
+ *   true if the configuration is empty, false otherwise.
  */
-#define _z_config_len _z_str_intmap_len
-
+bool _z_config_is_empty(const _z_config_t *ps);
 /**
  * Clone a config.
  *
  * Parameters:
- *     m: A pointer to the config to clone.
- *
- * Returns:
- *     The clone of the config.
+ *     dst: A pointer to the configuration to initialize with the clone.
+ *     src: A pointer to the configuration to clone.
  */
-#define _z_config_clone _z_str_intmap_clone
+z_result_t _z_config_copy(_z_config_t *dst, const _z_config_t *src);
+_z_config_t _z_config_clone(const _z_config_t *src);
 
 /**
- * Get the length of the given properties map.
- *
- * Parameters:
- *     ps: A pointer to the properties map.
- *
- * Returns:
- *     A boolean to indicate if properties are present.
+ * Move a configuration, leaving the source empty.
  */
-#define _z_config_is_empty _z_str_intmap_is_empty
+z_result_t _z_config_move(_z_config_t *dst, _z_config_t *src);
 
 /**
- * Clear a set of properties.
+ * Clear a configuration, resetting it to an empty state.
+ *
+ * Configuration strings are non-owning, so no memory is released.
  *
  * Parameters:
- *   ps: A pointer to the properties map.
+ *   ps: A pointer to the configuration.
  */
-#define _z_config_clear _z_str_intmap_clear
-
-/**
- * Free a set of properties.
- *
- * Parameters:
- *   ps: A pointer to a pointer of properties.
- *
- */
-#define _z_config_free _z_str_intmap_free
+void _z_config_clear(_z_config_t *ps);
 
 #ifdef __cplusplus
 }

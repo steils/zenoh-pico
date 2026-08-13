@@ -68,6 +68,12 @@ typedef enum z_locality_t {
     Z_LOCALITY_REMOTE = 2,
 } z_locality_t;
 
+#define _Z_LOCALITY_PRINT_FORMAT "%s"
+#define _Z_LOCALITY_PRINT_ARG(l) \
+    (l) == Z_LOCALITY_ANY        \
+        ? "any"                  \
+        : ((l) == Z_LOCALITY_SESSION_LOCAL ? "local" : ((l) == Z_LOCALITY_REMOTE ? "remote" : "unknown"))
+
 static inline z_locality_t z_locality_default(void) { return Z_LOCALITY_ANY; }
 
 /**

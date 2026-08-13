@@ -75,6 +75,7 @@ z_result_t _z_open_udp_multicast(_z_sys_net_socket_t *sock, const _z_sys_net_end
                                  uint32_t tout, const char *iface) {
     z_result_t ret = _Z_RES_OK;
 
+    sock->_sock._fd = INVALID_SOCKET;
     if (WSAStartup(MAKEWORD(2, 2), &_z_udp_multicast_windows_wsa_data) != 0) {
         _Z_ERROR_LOG(_Z_ERR_GENERIC);
         ret = _Z_ERR_GENERIC;
@@ -313,7 +314,7 @@ void _z_close_udp_multicast(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *
 }
 
 size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *addr) {
+                             _z_link_address_t *addr_out) {
     SOCKADDR_STORAGE raddr;
     unsigned int replen = sizeof(SOCKADDR_STORAGE);
 
@@ -329,13 +330,8 @@ size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_
             SOCKADDR_IN *a = ((SOCKADDR_IN *)lep._ep._iptcp->ai_addr);
             SOCKADDR_IN *b = ((SOCKADDR_IN *)&raddr);
             if (!((a->sin_port == b->sin_port) && (a->sin_addr.s_addr == b->sin_addr.s_addr))) {
-                if (addr != NULL) {
-                    addr->len = sizeof(IN_ADDR) + sizeof(USHORT);
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)addr->start, &b->sin_addr.s_addr, sizeof(IN_ADDR));
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)(addr->start + sizeof(IN_ADDR)), &b->sin_port, sizeof(USHORT));
-                }
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin_addr.s_addr, sizeof(IN_ADDR));
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin_port, sizeof(USHORT));
                 break;
             }
         } else if (lep._ep._iptcp->ai_family == AF_INET6) {
@@ -343,13 +339,8 @@ size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_
             SOCKADDR_IN6 *b = ((SOCKADDR_IN6 *)&raddr);
             if (!((a->sin6_port == b->sin6_port) &&
                   (memcmp(a->sin6_addr.s6_addr, b->sin6_addr.s6_addr, sizeof(struct in6_addr)) == 0))) {
-                if (addr != NULL) {
-                    addr->len = sizeof(struct in6_addr) + sizeof(USHORT);
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)addr->start, &b->sin6_addr.s6_addr, sizeof(struct in6_addr));
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)(addr->start + sizeof(struct in6_addr)), &b->sin6_port, sizeof(USHORT));
-                }
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin6_addr.s6_addr, sizeof(IN6_ADDR));
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin6_port, sizeof(USHORT));
                 break;
             }
         } else {
@@ -358,25 +349,6 @@ size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_
     } while (1);
 
     return rb;
-}
-
-size_t _z_read_exact_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *addr) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_read_udp_multicast(sock, pos, len - n, lep, addr);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
 }
 
 size_t _z_send_udp_multicast(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
@@ -406,14 +378,9 @@ void _z_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *
     _z_close_udp_multicast(sockrecv, socksend, rep, lep);
 }
 
-size_t _z_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *ep) {
-    return _z_read_exact_udp_multicast(sock, ptr, len, lep, ep);
-}
-
 size_t _z_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *ep) {
-    return _z_read_udp_multicast(sock, ptr, len, lep, ep);
+                             _z_link_address_t *ep_out) {
+    return _z_read_udp_multicast(sock, ptr, len, lep, ep_out);
 }
 
 size_t _z_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

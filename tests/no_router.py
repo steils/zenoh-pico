@@ -10,10 +10,13 @@ Unable to open session!"""
 
 def run_binary_test(binary_name, expected_status, expected_output):
     print(f"*** Testing {binary_name} ***")
-    command = [f"./{DIR_EXAMPLES}/{binary_name}"]
+    if binary_name == "z_pub":
+        command = [f"./{DIR_EXAMPLES}/{binary_name}", "-n", "-1"]
+    else:
+        command = [f"./{DIR_EXAMPLES}/{binary_name}"]
 
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    process.wait()
+    process.wait(10)
 
     # Check output
     output = process.stdout.read()
@@ -43,7 +46,7 @@ def run_binary_test(binary_name, expected_status, expected_output):
 
 
 def test_all():
-    binaries = ["z_sub", "z_pub", "z_queryable", "z_get", "z_liveliness", "z_get_liveliness", "z_sub_liveliness"]
+    binaries = ["z_pub", "z_sub", "z_queryable", "z_get", "z_liveliness", "z_get_liveliness", "z_sub_liveliness"]
 
     all_tests_passed = True
     for binary in binaries:

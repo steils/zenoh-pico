@@ -15,19 +15,23 @@
 #ifndef ZENOH_PICO_MULTICAST_RX_H
 #define ZENOH_PICO_MULTICAST_RX_H
 
-#include "zenoh-pico/transport/transport.h"
+#include <stddef.h>
+
+#include "zenoh-pico/link/address.h"
+#include "zenoh-pico/transport/multicast/transport.h"
+#include "zenoh-pico/transport/rx.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-z_result_t _z_multicast_recv_zbuf(_z_transport_multicast_t *ztm, size_t *to_read);
-z_result_t _z_multicast_recv_t_msg(_z_transport_multicast_t *ztm, _z_transport_message_t *t_msg);
-z_result_t _z_multicast_handle_transport_message(_z_transport_multicast_t *ztm, _z_transport_message_t *t_msg,
-                                                 _z_slice_t *addr);
+#if Z_FEATURE_MULTICAST_TRANSPORT == 1
+z_result_t _z_multicast_transport_manager_read(_z_multicast_transport_manager_t *manager,
+                                               const _z_ready_links_mask_bitset_t *ready_links);
+#endif
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZENOH_PICO_TRANSPORT_LINK_RX_H */
+#endif /* ZENOH_PICO_MULTICAST_RX_H */

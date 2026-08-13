@@ -112,6 +112,20 @@ static _z_fut_fn_result_t fn_reschedule_once(void *arg, _z_executor_t *ex) {
     return (_z_fut_fn_result_t){._status = _Z_FUT_STATUS_READY};
 }
 
+// Suspends on first call; caller must resume it externally; finishes on second.
+static _z_fut_fn_result_t fn_suspend_once(void *arg, _z_executor_t *ex) {
+    (void)ex;
+    test_arg_t *a = (test_arg_t *)arg;
+    _z_mutex_lock(&a->mutex);
+    int count = ++a->call_count;
+    _z_condvar_signal_all(&a->condvar);
+    _z_mutex_unlock(&a->mutex);
+    if (count == 1) {
+        return _z_fut_fn_result_suspend();
+    }
+    return (_z_fut_fn_result_t){._status = _Z_FUT_STATUS_READY};
+}
+
 static void destroy_fn(void *arg) {
     test_arg_t *a = (test_arg_t *)arg;
     _z_mutex_lock(&a->mutex);
@@ -577,6 +591,124 @@ static void test_suspend_stop_restart_resume(void) {
     test_arg_clear(&arg1);
 }
 
+// A suspended task can be resumed via the background executor; it then runs to completion.
+static void test_resume_suspended_fut(void) {
+    printf("Test: resume suspended task runs it to completion\n");
+    _z_background_executor_t be;
+    assert(_z_background_executor_init(&be, NULL) == _Z_RES_OK);
+
+    test_arg_t arg;
+    test_arg_init(&arg);
+
+    _z_fut_t fut = _z_fut_new(&arg, fn_suspend_once, destroy_fn);
+    _z_fut_handle_t h;
+    assert(_z_background_executor_spawn(&be, &fut, &h) == _Z_RES_OK);
+    assert(!_z_fut_handle_is_null(h));
+
+    // First call runs on the background thread and suspends the task.
+    test_arg_wait_calls(&arg, 1);
+    _z_fut_status_t status;
+    assert(_z_background_executor_get_fut_status(&be, &h, &status) == _Z_RES_OK);
+    assert(status == _Z_FUT_STATUS_SUSPENDED);
+    assert(test_arg_get_destroyed(&arg) == false);  // task not finished while suspended
+
+    // Give the background thread a chance to (incorrectly) run it again — it must not.
+    z_sleep_ms(100);
+    assert(test_arg_get_calls(&arg) == 1);
+
+    // Resume the suspended task: it becomes runnable and finishes.
+    assert(_z_background_executor_resume_suspended_fut(&be, &h) == _Z_RES_OK);
+
+    test_arg_wait_calls(&arg, 2);
+    assert(arg.call_count == 2);
+    test_arg_wait_destroyed(&arg);
+    assert(arg.destroyed == true);
+
+    _z_background_executor_destroy(&be);
+    test_arg_clear(&arg);
+}
+
+// A sleeping task can be woken up early via the background executor; it then runs
+// without waiting for its (far-future) wake-up time.
+static void test_wakeup_sleeping_fut(void) {
+    printf("Test: wakeup sleeping task runs it early\n");
+    _z_background_executor_t be;
+    assert(_z_background_executor_init(&be, NULL) == _Z_RES_OK);
+
+    test_arg_t arg;
+    test_arg_init(&arg);
+    arg.wait_ms = 100000;  // sleep far into the future so it won't wake on its own during the test
+
+    _z_fut_t fut = _z_fut_new(&arg, fn_reschedule_once, destroy_fn);
+    _z_fut_handle_t h;
+    assert(_z_background_executor_spawn(&be, &fut, &h) == _Z_RES_OK);
+    assert(!_z_fut_handle_is_null(h));
+
+    // First call runs and reschedules far in the future — task is now sleeping.
+    test_arg_wait_calls(&arg, 1);
+    _z_fut_status_t status;
+    assert(_z_background_executor_get_fut_status(&be, &h, &status) == _Z_RES_OK);
+    assert(status == _Z_FUT_STATUS_SLEEPING);
+    assert(test_arg_get_destroyed(&arg) == false);
+
+    // Wake it up before the wake-up time elapses: it runs the second call and finishes.
+    assert(_z_background_executor_wakeup_sleeping_fut(&be, &h) == _Z_RES_OK);
+
+    test_arg_wait_calls(&arg, 2);
+    assert(arg.call_count == 2);
+    test_arg_wait_destroyed(&arg);
+    assert(arg.destroyed == true);
+
+    _z_background_executor_destroy(&be);
+    test_arg_clear(&arg);
+}
+
+// The combined resume-or-wakeup API wakes both a suspended and a sleeping task.
+static void test_resume_or_wakeup_fut(void) {
+    printf("Test: resume_or_wakeup wakes both suspended and sleeping tasks\n");
+    _z_background_executor_t be;
+    assert(_z_background_executor_init(&be, NULL) == _Z_RES_OK);
+
+    test_arg_t sus;
+    test_arg_init(&sus);
+    test_arg_t slp;
+    test_arg_init(&slp);
+    slp.wait_ms = 100000;  // sleep far into the future so it won't wake on its own during the test
+
+    _z_fut_t sus_fut = _z_fut_new(&sus, fn_suspend_once, destroy_fn);
+    _z_fut_handle_t sh;
+    assert(_z_background_executor_spawn(&be, &sus_fut, &sh) == _Z_RES_OK);
+
+    _z_fut_t slp_fut = _z_fut_new(&slp, fn_reschedule_once, destroy_fn);
+    _z_fut_handle_t lh;
+    assert(_z_background_executor_spawn(&be, &slp_fut, &lh) == _Z_RES_OK);
+
+    // Wait for both tasks to reach their blocked states.
+    test_arg_wait_calls(&sus, 1);
+    test_arg_wait_calls(&slp, 1);
+    _z_fut_status_t status;
+    assert(_z_background_executor_get_fut_status(&be, &sh, &status) == _Z_RES_OK);
+    assert(status == _Z_FUT_STATUS_SUSPENDED);
+    assert(_z_background_executor_get_fut_status(&be, &lh, &status) == _Z_RES_OK);
+    assert(status == _Z_FUT_STATUS_SLEEPING);
+
+    // Combined call wakes the suspended task ...
+    assert(_z_background_executor_resume_suspended_or_wakeup_sleeping_fut(&be, &sh) == _Z_RES_OK);
+    // ... and the sleeping task, without waiting for its (far-future) wake-up time.
+    assert(_z_background_executor_resume_suspended_or_wakeup_sleeping_fut(&be, &lh) == _Z_RES_OK);
+
+    test_arg_wait_calls(&sus, 2);
+    test_arg_wait_destroyed(&sus);
+    test_arg_wait_calls(&slp, 2);
+    test_arg_wait_destroyed(&slp);
+    assert(sus.call_count == 2 && sus.destroyed == true);
+    assert(slp.call_count == 2 && slp.destroyed == true);
+
+    _z_background_executor_destroy(&be);
+    test_arg_clear(&sus);
+    test_arg_clear(&slp);
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 int main(void) {
@@ -596,6 +728,9 @@ int main(void) {
     test_stop_and_restart();
     test_stop_preserves_pending_tasks();
     test_suspend_stop_restart_resume();
+    test_resume_suspended_fut();
+    test_wakeup_sleeping_fut();
+    test_resume_or_wakeup_fut();
     printf("All background executor tests passed.\n");
     return 0;
 }

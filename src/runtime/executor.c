@@ -14,6 +14,8 @@
 
 #include "zenoh-pico/runtime/executor.h"
 
+#include "zenoh-pico/collections/algorithms_template.h"
+
 _z_fut_handle_t _z_executor_spawn(_z_executor_t *executor, _z_fut_t *fut) {
     _z_fut_data_t fut_data;
     _z_fut_move(&fut_data._fut, fut);
@@ -80,7 +82,7 @@ _z_executor_status_t _z_executor_get_next_fut(_z_executor_t *executor, _z_fut_da
                 _z_fut_data_hmap_index_deque_push_back(&executor->_ready_tasks, &sleeping_idx);
                 // Mark the sleeping task as ready since it's now
                 // re-enqueued to the ready task queue and can be executed.
-                _z_fut_data_hmap_at(&executor->_tasks, sleeping_idx)->val._schedule = _z_fut_schedule_ready();
+                _z_fut_data_hmap_at(&executor->_tasks, sleeping_idx)->val._schedule = _z_fut_schedule_running();
             } else {
                 // No non-sleeping task, execute the ready sleeping task directly.
                 *task_idx = sleeping_idx;
@@ -163,18 +165,24 @@ bool _z_executor_cancel_fut(_z_executor_t *executor, const _z_fut_handle_t *hand
     if (_z_fut_handle_is_null(*handle)) {
         return false;
     }
-    _z_fut_data_t *fut = _z_fut_data_hmap_get(&executor->_tasks, &handle->_id);
-    if (fut == NULL) {
+    _z_fut_data_hmap_iter_t fut_idx = _z_fut_data_hmap_get_iter(&executor->_tasks, &handle->_id);
+    if (fut_idx == _z_fut_data_hmap_end(&executor->_tasks)) {
         return false;
     }
-    // We leave the cancelled task in the NULL state, to let executor remove it while spinning,
-    // since we don't want to break the sleeping/ready task queue order by removing the cancelled task immediately.
-    _z_fut_data_destroy(fut);
-
+    _z_fut_data_t *fut = &_z_fut_data_hmap_at(&executor->_tasks, fut_idx)->val;
+    if (_z_fut_schedule_get_status(fut->_schedule) == _Z_FUT_STATUS_RUNNING) {
+        // task is in the ready queue
+        _ZP_REMOVE_ONE(_z_fut_data_hmap_index_deque, &executor->_ready_tasks, *_ == fut_idx);
+    } else if (_z_fut_schedule_get_status(fut->_schedule) == _Z_FUT_STATUS_SLEEPING) {
+        // task is in the sleeping queue
+        _ZP_REMOVE_ONE(_z_sleeping_fut_pqueue, &executor->_sleeping_tasks, *_ == fut_idx);
+    }
+    _z_fut_data_hmap_remove_at(&executor->_tasks, fut_idx, NULL, NULL);
     return true;
 }
 
-bool _z_executor_resume_suspended_fut(_z_executor_t *executor, const _z_fut_handle_t *handle) {
+static bool _z_executor_put_task_in_ready_queue(_z_executor_t *executor, const _z_fut_handle_t *handle,
+                                                bool check_sleeping, bool check_suspended) {
     if (_z_fut_handle_is_null(*handle)) {
         return false;
     }
@@ -183,13 +191,27 @@ bool _z_executor_resume_suspended_fut(_z_executor_t *executor, const _z_fut_hand
         return false;
     }
     _z_fut_data_t *fut = &_z_fut_data_hmap_at(&executor->_tasks, fut_idx)->val;
-    if (_z_fut_schedule_get_status(fut->_schedule) != _Z_FUT_STATUS_SUSPENDED) {
+    if ((check_sleeping && _z_fut_schedule_get_status(fut->_schedule) == _Z_FUT_STATUS_SLEEPING)) {
+        _ZP_REMOVE_ONE(_z_sleeping_fut_pqueue, &executor->_sleeping_tasks, *_ == fut_idx);
+    } else if (!(check_suspended && _z_fut_schedule_get_status(fut->_schedule) == _Z_FUT_STATUS_SUSPENDED)) {
         return false;
     }
-    // Mark the suspended task as ready, and re-enqueue it to the ready task queue.
-    fut->_schedule = _z_fut_schedule_ready();
+    // Mark the suspended task as running, and re-enqueue it to the ready task queue.
+    fut->_schedule = _z_fut_schedule_running();
     // can't fail since we have enough capacity for all tasks in the hashmap
     _z_fut_data_hmap_index_deque_push_back(&executor->_ready_tasks, &fut_idx);
 
     return true;
+}
+
+bool _z_executor_resume_suspended_fut(_z_executor_t *executor, const _z_fut_handle_t *handle) {
+    return _z_executor_put_task_in_ready_queue(executor, handle, false, true);
+}
+
+bool _z_executor_wakeup_sleeping_fut(_z_executor_t *executor, const _z_fut_handle_t *handle) {
+    return _z_executor_put_task_in_ready_queue(executor, handle, true, false);
+}
+
+bool _z_executor_resume_suspended_or_wakeup_sleeping_fut(_z_executor_t *executor, const _z_fut_handle_t *handle) {
+    return _z_executor_put_task_in_ready_queue(executor, handle, true, true);
 }

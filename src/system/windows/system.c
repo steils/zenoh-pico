@@ -265,6 +265,16 @@ z_clock_t z_clock_now(void) {
     return now;
 }
 
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (l->QuadPart < r->QuadPart) {
+        return -1;
+    } else if (l->QuadPart > r->QuadPart) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);  // ticks per second

@@ -432,14 +432,13 @@ _z_zbuf_t _z_wbuf_to_zbuf(const _z_wbuf_t *wbf) {
     return zbf;
 }
 
-_z_zbuf_t _z_wbuf_moved_as_zbuf(_z_wbuf_t *wbf) {
+_z_zbuf_t _z_wbuf_as_zbuf_view(_z_wbuf_t *wbf) {
     // Can only move single buffer wbuf
     assert(_z_iosli_svec_len(&wbf->_ioss) == 1);
 
     _z_zbuf_t zbf = _z_zbuf_null();
-    _z_iosli_t *ios = _z_wbuf_get_iosli(wbf, 0);
-    zbf._ios = _z_iosli_steal(ios);
-    _z_wbuf_clear(wbf);
+    zbf._ios = *_z_wbuf_get_iosli(wbf, 0);
+    zbf._ios._is_alloc = false;
     return zbf;
 }
 

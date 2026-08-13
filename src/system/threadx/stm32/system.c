@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "tx_api.h"
 #include "zenoh-pico/config.h"
@@ -48,11 +49,6 @@ void *z_malloc(size_t size) {
         ptr = NULL;
     }
     return ptr;
-}
-
-void *z_realloc(void *ptr, size_t size) {
-    // realloc not implemented
-    return NULL;
 }
 
 void z_free(void *ptr) { tx_byte_release(ptr); }

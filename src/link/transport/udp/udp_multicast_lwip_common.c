@@ -33,6 +33,7 @@ z_result_t _z_lwip_udp_multicast_open(_z_sys_net_socket_t *sock, const _z_sys_ne
     z_result_t ret = _Z_RES_OK;
 
     struct sockaddr *lsockaddr = NULL;
+    _z_lwip_socket_set(sock, -1);
     unsigned long addrlen = get_ip_from_iface(iface, rep._iptcp->ai_family, &lsockaddr);
     if (addrlen != 0U) {
         _z_lwip_socket_set(sock, socket(rep._iptcp->ai_family, rep._iptcp->ai_socktype, rep._iptcp->ai_protocol));
@@ -208,7 +209,7 @@ void _z_lwip_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socke
 }
 
 size_t _z_lwip_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                  const _z_sys_net_endpoint_t lep, _z_slice_t *addr) {
+                                  const _z_sys_net_endpoint_t lep, _z_link_address_t *addr_out) {
     struct sockaddr_storage raddr;
     unsigned long replen = sizeof(struct sockaddr_storage);
 
@@ -223,14 +224,8 @@ size_t _z_lwip_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, 
             struct sockaddr_in *a = ((struct sockaddr_in *)lep._iptcp->ai_addr);
             struct sockaddr_in *b = ((struct sockaddr_in *)&raddr);
             if (!((a->sin_port == b->sin_port) && (a->sin_addr.s_addr == b->sin_addr.s_addr))) {
-                if (addr != NULL) {
-                    addr->len = sizeof(in_addr_t) + sizeof(in_port_t);
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)addr->start, &b->sin_addr.s_addr, sizeof(in_addr_t));
-                    // flawfinder: ignore
-                    (void)memcpy((uint8_t *)(addr->start + sizeof(in_addr_t)), &b->sin_port, sizeof(in_port_t));
-                }
-                break;
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin_addr.s_addr, sizeof(in_addr_t));
+                _z_link_address_append(addr_out, (uint8_t *)&b->sin_port, sizeof(in_port_t));
             }
         } else {
             continue;
@@ -238,25 +233,6 @@ size_t _z_lwip_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, 
     } while (1);
 
     return (size_t)rb;
-}
-
-size_t _z_lwip_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                        const _z_sys_net_endpoint_t lep, _z_slice_t *addr) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_lwip_udp_multicast_read(sock, pos, len - n, lep, addr);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, (ptrdiff_t)rb);
-    } while (n != len);
-
-    return n;
 }
 
 size_t _z_lwip_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

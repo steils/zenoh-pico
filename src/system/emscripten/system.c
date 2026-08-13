@@ -159,6 +159,16 @@ unsigned long z_time_elapsed_ms_since(z_time_t *time, z_time_t *epoch) {
 /*------------------ Instant ------------------*/
 z_clock_t z_clock_now(void) { return z_time_now(); }
 
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (*l < *r) {
+        return -1;
+    } else if (*l > *r) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {
     return z_time_elapsed_ms_since(instant, epoch) * 1000;
 }

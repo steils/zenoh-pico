@@ -18,7 +18,7 @@
 #include <stdlib.h>
 
 #include "zenoh-pico/config.h"
-#include "zenoh-pico/link/manager.h"
+#include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/link/transport/tcp.h"
 #include "zenoh-pico/link/transport/ws.h"
 
@@ -26,7 +26,7 @@
 
 static z_result_t _z_ws_address_valid(const _z_string_t *address) { return _z_tcp_address_valid(address); }
 
-z_result_t _z_endpoint_ws_valid(_z_endpoint_t *endpoint) {
+z_result_t _z_endpoint_ws_valid(const _z_endpoint_t *endpoint) {
     _z_string_t str = _z_string_alias_str(WS_SCHEMA);
     if (!_z_string_equals(&endpoint->_locator._protocol, &str)) {
         _Z_ERROR_LOG(_Z_ERR_CONFIG_LOCATOR_INVALID);
@@ -40,74 +40,54 @@ z_result_t _z_endpoint_ws_valid(_z_endpoint_t *endpoint) {
     return ret;
 }
 
-z_result_t _z_f_link_open_ws(_z_link_t *zl) {
+bool _z_unicast_link_ws_read(_z_unicast_link_ws_t *tcp, uint8_t *ptr, size_t *len) {
+    *len = _z_ws_transport_read(&tcp->_sock, ptr, *len);
+    return *len != SIZE_MAX;
+}
+
+bool _z_unicast_link_ws_write(_z_unicast_link_ws_t *ws, const uint8_t *ptr, size_t *len) {
+    *len = _z_ws_transport_write(&ws->_sock, ptr, *len);
+    return *len != SIZE_MAX;
+}
+
+z_result_t _z_unicast_link_ws_create(_z_unicast_link_ws_t *ws, const _z_endpoint_t *endpoint) {
+    memset(ws, 0, sizeof(_z_unicast_link_ws_t));
+    _z_sys_net_endpoint_t ep;
+    z_result_t ret = _z_ws_endpoint_init(&ep, &endpoint->_locator._address);
+    if (ret != _Z_RES_OK) {
+        return ret;
+    }
     uint32_t tout = Z_CONFIG_SOCKET_TIMEOUT;
-    char *tout_as_str = _z_str_intmap_get(&zl->_endpoint._config, WS_CONFIG_TOUT_KEY);
+    char *tout_as_str = _z_str_intmap_get(&endpoint->_config, WS_CONFIG_TOUT_KEY);
     if (tout_as_str != NULL) {
         tout = (uint32_t)strtoul(tout_as_str, NULL, 10);
     }
 
-    return _z_ws_transport_open(&zl->_socket._ws, tout);
-}
-
-z_result_t _z_f_link_listen_ws(_z_link_t *zl) { return _z_ws_transport_listen(&zl->_socket._ws); }
-
-void _z_f_link_close_ws(_z_link_t *zl) { _z_ws_transport_close(&zl->_socket._ws); }
-
-void _z_f_link_free_ws(_z_link_t *zl) { _z_ws_endpoint_clear(&zl->_socket._ws._rep); }
-
-size_t _z_f_link_write_ws(const _z_link_t *zl, const uint8_t *ptr, size_t len, _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(socket);
-    return _z_ws_transport_write(&zl->_socket._ws, ptr, len);
-}
-
-size_t _z_f_link_write_all_ws(const _z_link_t *zl, const uint8_t *ptr, size_t len) {
-    return _z_ws_transport_write(&zl->_socket._ws, ptr, len);
-}
-
-size_t _z_f_link_read_ws(const _z_link_t *zl, uint8_t *ptr, size_t len, _z_slice_t *addr) {
-    _ZP_UNUSED(addr);
-    return _z_ws_transport_read(&zl->_socket._ws, ptr, len);
-}
-
-size_t _z_f_link_read_exact_ws(const _z_link_t *zl, uint8_t *ptr, size_t len, _z_slice_t *addr,
-                               _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(addr);
-    _ZP_UNUSED(socket);
-    return _z_ws_transport_read_exact(&zl->_socket._ws, ptr, len);
-}
-
-size_t _z_f_link_ws_read_socket(const _z_sys_net_socket_t socket, uint8_t *ptr, size_t len) {
-    return _z_ws_transport_read_socket(socket, ptr, len);
-}
-
-uint16_t _z_get_link_mtu_ws(void) {
-    // Maximum MTU for TCP
-    return 65535;
-}
-
-z_result_t _z_new_link_ws(_z_link_t *zl, _z_endpoint_t *endpoint) {
-    zl->_type = _Z_LINK_TYPE_WS;
-    zl->_cap._transport = Z_LINK_CAP_TRANSPORT_UNICAST;
-    zl->_cap._flow = Z_LINK_CAP_FLOW_DATAGRAM;
-    zl->_cap._is_reliable = true;
-
-    zl->_mtu = _z_get_link_mtu_ws();
-
-    zl->_endpoint = *endpoint;
-    z_result_t ret = _z_ws_endpoint_init(&zl->_socket._ws._rep, &endpoint->_locator._address);
-
-    zl->_open_f = _z_f_link_open_ws;
-    zl->_listen_f = _z_f_link_listen_ws;
-    zl->_close_f = _z_f_link_close_ws;
-    zl->_free_f = _z_f_link_free_ws;
-
-    zl->_write_f = _z_f_link_write_ws;
-    zl->_write_all_f = _z_f_link_write_all_ws;
-    zl->_read_f = _z_f_link_read_ws;
-    zl->_read_exact_f = _z_f_link_read_exact_ws;
-    zl->_read_socket_f = _z_f_link_ws_read_socket;
-
+    ret = _z_ws_transport_open(&ws->_sock, ep, tout);
+    _z_ws_endpoint_clear(&ep);
     return ret;
 }
+
+void _z_unicast_link_ws_clear(_z_unicast_link_ws_t *ws) { _z_ws_transport_close(&ws->_sock); }
+
+uint16_t _z_unicast_link_ws_get_mtu(const _z_unicast_link_ws_t *ws) {
+    _ZP_UNUSED(ws);
+    return 65535;  // Maximum MTU for TCP
+}
+bool _z_unicast_link_ws_is_reliable(const _z_unicast_link_ws_t *ws) {
+    _ZP_UNUSED(ws);
+    return true;
+}
+bool _z_unicast_link_ws_is_streamed(const _z_unicast_link_ws_t *ws) {
+    _ZP_UNUSED(ws);
+    return false;
+}
+
+z_result_t _z_unicast_link_ws_get_endpoints(const _z_unicast_link_ws_t *ws, char *local, size_t local_len, char *remote,
+                                            size_t remote_len) {
+    return _z_socket_get_endpoints(&ws->_sock, local, local_len, remote, remote_len);
+}
+
+_z_sys_net_socket_t *_z_unicast_link_ws_get_sock(_z_unicast_link_ws_t *ws) { return &ws->_sock; }
+
 #endif

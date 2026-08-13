@@ -47,42 +47,41 @@ void _z_timestamp_clear(_z_timestamp_t *tstamp) {
     tstamp->time = 0;
 }
 
-z_result_t _z_session_generate_zid(_z_id_t *bs, uint8_t size) {
-    z_result_t ret = _Z_RES_OK;
-    z_random_fill((uint8_t *)bs->id, size);
-    return ret;
+static z_result_t _z_session_init_mutexes(_z_session_t *session) {
+#if Z_FEATURE_MULTI_THREAD == 1
+    _Z_RETURN_IF_ERR(_z_mutex_init(&session->_mutex_inner));
+    _Z_CLEAN_RETURN_IF_ERR(_z_mutex_init(&session->_mutex_last_timestamp), _z_mutex_drop(&session->_mutex_inner));
+#if Z_FEATURE_ADMIN_SPACE == 1
+    _Z_CLEAN_RETURN_IF_ERR(_z_mutex_init(&session->_mutex_admin_space), _z_mutex_drop(&session->_mutex_inner);
+                           _z_mutex_drop(&session->_mutex_last_timestamp));
+#endif
+#else
+    _ZP_UNUSED(session);
+#endif
+    return _Z_RES_OK;
+}
+
+static void _z_session_drop_mutexes(_z_session_t *session) {
+#if Z_FEATURE_MULTI_THREAD == 1
+    _z_mutex_drop(&session->_mutex_inner);
+    _z_mutex_drop(&session->_mutex_last_timestamp);
+#if Z_FEATURE_ADMIN_SPACE == 1
+    _z_mutex_drop(&session->_mutex_admin_space);
+#endif
+#else
+    _ZP_UNUSED(session);
+#endif
 }
 
 /*------------------ Init/Free/Close session ------------------*/
-z_result_t _z_session_init(_z_session_t *zn, const _z_id_t *zid) {
+z_result_t _z_session_init(_z_session_t *zn, const _z_id_t *zid, z_whatami_t whatami) {
     z_result_t ret = _Z_RES_OK;
     _z_atomic_bool_init(&zn->_is_closed, true);
     _z_runtime_null(&zn->_runtime);
-#if Z_FEATURE_MULTI_THREAD == 1
-    _Z_RETURN_IF_ERR(_z_mutex_init(&zn->_mutex_inner));
-    ret = _z_mutex_rec_init(&zn->_mutex_transport);
-    if (ret != _Z_RES_OK) {
-        _z_mutex_drop(&zn->_mutex_inner);
-        _Z_ERROR_RETURN(ret);
-    }
-    ret = _z_mutex_init(&zn->_mutex_last_timestamp);
-    if (ret != _Z_RES_OK) {
-        _z_mutex_rec_drop(&zn->_mutex_transport);
-        _z_mutex_drop(&zn->_mutex_last_timestamp);
-        _z_mutex_drop(&zn->_mutex_inner);
-        _Z_ERROR_RETURN(ret);
-    }
-#if Z_FEATURE_ADMIN_SPACE == 1
-    ret = _z_mutex_init(&zn->_mutex_admin_space);
-    if (ret != _Z_RES_OK) {
-        _z_mutex_rec_drop(&zn->_mutex_transport);
-        _z_mutex_drop(&zn->_mutex_inner);
-        _Z_ERROR_RETURN(ret);
-    }
-#endif
-#endif
-    zn->_mode = Z_WHATAMI_CLIENT;
-    zn->_tp._type = _Z_TRANSPORT_NONE;
+    _Z_RETURN_IF_ERR(_z_transport_manager_create(&zn->_transport_manager, zn));
+    _Z_CLEAN_RETURN_IF_ERR(_z_session_init_mutexes(zn), _z_transport_manager_clear(&zn->_transport_manager));
+
+    zn->_mode = whatami;
     // Initialize the counters to 1
     zn->_entity_id = 1;
     zn->_resource_id = 1;
@@ -93,6 +92,9 @@ z_result_t _z_session_init(_z_session_t *zn, const _z_id_t *zid) {
 
     // Initialize the data structs
     zn->_local_resources = NULL;
+    for (size_t i = 0; i < Z_MAX_NUM_PEERS; i++) {
+        zn->_remote_resources[i] = NULL;
+    }
 #if Z_FEATURE_SUBSCRIPTION == 1
     zn->_subscriptions = NULL;
     zn->_liveliness_subscriptions = NULL;
@@ -145,19 +147,12 @@ z_result_t _z_session_init(_z_session_t *zn, const _z_id_t *zid) {
     }
 #endif
     if (ret != _Z_RES_OK) {
-#if Z_FEATURE_MULTI_THREAD == 1
-#if Z_FEATURE_ADMIN_SPACE == 1
-        _z_mutex_drop(&zn->_mutex_admin_space);
-#endif
-        _z_mutex_rec_drop(&zn->_mutex_transport);
-        _z_mutex_drop(&zn->_mutex_last_timestamp);
-        _z_mutex_drop(&zn->_mutex_inner);
-#endif
+        _z_transport_manager_clear(&zn->_transport_manager);
+        _z_session_drop_mutexes(zn);
         _z_sync_group_drop(&zn->_callback_drop_sync_group);
         _z_runtime_clear(&zn->_runtime);
         _Z_ERROR_RETURN(ret);
     }
-
     _z_interest_init(zn);
 
     zn->_local_zid = *zid;
@@ -179,7 +174,11 @@ z_result_t _z_session_close(_z_session_t *zn) {
     // callbacks currently executing, like in the case of liveliness subscribers/ matching listeners / connectivity
     // events
     _Z_RETURN_IF_ERR(_z_runtime_stop(&zn->_runtime));
+    _Z_RETURN_IF_ERR(_z_transport_manager_lock(&zn->_transport_manager));
+    _z_transport_manager_close(&zn->_transport_manager);
+    _z_transport_manager_unlock(&zn->_transport_manager);
     _z_flush_local_resources(zn);
+    _z_flush_remote_resources(zn);
 #if Z_FEATURE_SUBSCRIPTION == 1
     _z_flush_subscriptions(zn);
 #endif
@@ -227,20 +226,10 @@ z_result_t _z_session_close(_z_session_t *zn) {
 
 void _z_session_clear(_z_session_t *zn) {
     _z_session_close(zn);
+    _z_transport_manager_clear(&zn->_transport_manager);
     _z_runtime_clear(&zn->_runtime);
     _z_config_clear(&zn->_config);
-    _z_session_transport_mutex_lock(zn);
-    _z_transport_clear(&zn->_tp);
-    _z_session_transport_mutex_unlock(zn);
-
-#if Z_FEATURE_MULTI_THREAD == 1
-#if Z_FEATURE_ADMIN_SPACE == 1
-    _z_mutex_drop(&zn->_mutex_admin_space);
-#endif
-    _z_mutex_rec_drop(&zn->_mutex_transport);
-    _z_mutex_drop(&zn->_mutex_last_timestamp);
-    _z_mutex_drop(&zn->_mutex_inner);
-#endif  // Z_FEATURE_MULTI_THREAD == 1
+    _z_session_drop_mutexes(zn);
     _z_sync_group_drop(&zn->_callback_drop_sync_group);
     _z_session_weak_drop(&zn->_weak);
 }

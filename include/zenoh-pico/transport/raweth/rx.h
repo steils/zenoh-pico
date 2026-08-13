@@ -21,7 +21,10 @@
 extern "C" {
 #endif
 
-z_result_t _z_raweth_recv_t_msg(_z_transport_multicast_t *ztm, _z_transport_message_t *t_msg, _z_slice_t *addr);
+#if Z_FEATURE_RAWETH_TRANSPORT == 1
+z_result_t _z_raweth_process_rx_buffer(_z_zbuf_t *zbf);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

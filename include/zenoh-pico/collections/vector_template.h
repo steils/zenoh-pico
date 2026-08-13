@@ -74,6 +74,18 @@ typedef _ZP_VECTOR_TEMPLATE_ELEM_TYPE _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, elem_t);
 // iter_t is the iterator type (a plain index). Used by algorithms_template.h macros.
 typedef size_t _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, iter_t);
 
+// Input parameter type for push_back/append/insert. Elements are passed by const
+// pointer when they are both trivially moveable (moved in via a plain copy that
+// leaves the source intact) and trivially destructible, so these functions never
+// mutate or consume the source. Otherwise a mutable pointer is required because a
+// custom move may consume the source. See the note on const_get regarding
+// applying `const` to the elem_t typedef rather than the underlying type.
+#if defined(_ZP_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE) && defined(_ZP_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE)
+#define _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE const _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, elem_t)
+#else
+#define _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE _ZP_VECTOR_TEMPLATE_ELEM_TYPE
+#endif
+
 // Initializes a new, empty vector.
 static inline void _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, init)(_ZP_VECTOR_TEMPLATE_TYPE *vec) {
     vec->_size = 0;
@@ -182,7 +194,9 @@ static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, reserve)(_ZP_VECTOR_TEMPLAT
 #if defined(_ZP_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE)
     // SAFETY: new_buffer is guaranteed to have enough capacity for all existing elements by construction.
     // Flawfinder: ignore [CWE-120]
-    memcpy(new_buffer, vec->_buffer, vec->_size * sizeof(_ZP_VECTOR_TEMPLATE_ELEM_TYPE));
+    if (vec->_size > 0) {
+        memcpy(new_buffer, vec->_buffer, vec->_size * sizeof(_ZP_VECTOR_TEMPLATE_ELEM_TYPE));
+    }
 #else
     for (size_t i = 0; i < vec->_size; i++) {
         _ZP_VECTOR_TEMPLATE_ELEM_MOVE_FN(&new_buffer[i], &vec->_buffer[i]);
@@ -205,7 +219,7 @@ static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, init_with_capacity)(_ZP_VEC
 // Grows the internal buffer (doubling capacity) if needed.
 // Returns true on success, or false if a reallocation was required but failed.
 static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, push_back)(_ZP_VECTOR_TEMPLATE_TYPE *vec,
-                                                                _ZP_VECTOR_TEMPLATE_ELEM_TYPE *elem) {
+                                                                _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elem) {
     if (vec->_size == _ZP_VECTOR_TEMPLATE_MAX_ALLOC_SIZE) {
         return false;  // avoid overflow in malloc
     }
@@ -232,7 +246,7 @@ static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, push_back)(_ZP_VECTOR_TEMPL
 // Returns true on success, or false if a reallocation was required but failed,
 // in which case the vector is left unchanged and no elements are moved.
 static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, append)(_ZP_VECTOR_TEMPLATE_TYPE *vec,
-                                                             _ZP_VECTOR_TEMPLATE_ELEM_TYPE *elems, size_t len) {
+                                                             _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elems, size_t len) {
     if (len == 0) {
         return true;  // nothing to append; never allocates or dereferences elems/_buffer
     }
@@ -306,7 +320,7 @@ static inline _ZP_VECTOR_TEMPLATE_ELEM_TYPE *_ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, f
 // Returns true on success, or false if the index is out of bounds (index > size) or a reallocation
 // was required but failed (in which case the vector is left unchanged).
 static inline bool _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, insert)(_ZP_VECTOR_TEMPLATE_TYPE *vec, size_t index,
-                                                             _ZP_VECTOR_TEMPLATE_ELEM_TYPE *elem) {
+                                                             _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elem) {
     if (index > vec->_size) {
         return false;
     }
@@ -446,6 +460,7 @@ static inline _ZP_CAT(_ZP_VECTOR_TEMPLATE_NAME, iter_t)
 #undef _ZP_VECTOR_TEMPLATE_NAME
 #undef _ZP_VECTOR_TEMPLATE_ELEM_DESTROY_FN
 #undef _ZP_VECTOR_TEMPLATE_ELEM_MOVE_FN
+#undef _ZP_VECTOR_TEMPLATE_ELEM_INPUT_TYPE
 #undef _ZP_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE
 #undef _ZP_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE
 #undef _ZP_VECTOR_TEMPLATE_ALLOC_FN

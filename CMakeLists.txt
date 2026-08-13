@@ -316,7 +316,7 @@ set(Z_TRANSPORT_LEASE_EXPIRE_FACTOR 3 CACHE STRING "Default session lease expire
 set(Z_RUNTIME_MAX_TASKS 64 CACHE STRING "Maximum number of tasks in zenoh-pico's runtime")
 set(Z_RUNTIME_IDLE_READ_TASK_SLEEP 0 CACHE STRING "Idle read task sleep duration in milliseconds.")
 set(Z_TRANSPORT_ACCEPT_TIMEOUT 1000 CACHE STRING "Link accept timeout in P2P mode in milliseconds")
-set(Z_TRANSPORT_CONNECT_TIMEOUT 10000 CACHE STRING "Link connect timeout in P2P mode in milliseconds")
+set(Z_TRANSPORT_CONNECT_TIMEOUT 1000 CACHE STRING "Link connect timeout in P2P mode in milliseconds")
 set(Z_MAX_KEYEXPR_LENGTH 256 CACHE STRING "Maximum key expression length accepted by zenoh-pico.")
 
 
@@ -356,7 +356,6 @@ set(Z_FEATURE_MATCHING 1 CACHE STRING "Toggle matching feature")
 set(Z_FEATURE_RX_CACHE 0 CACHE STRING "Toggle RX_CACHE")
 set(Z_FEATURE_UNICAST_PEER 1 CACHE STRING "Toggle Unicast peer mode")
 set(Z_FEATURE_AUTO_RECONNECT 1 CACHE STRING "Toggle automatic reconnection")
-set(Z_FEATURE_MULTICAST_DECLARATIONS 0 CACHE STRING "Toggle multicast resource declarations")
 set(Z_FEATURE_LOCAL_QUERYABLE 0 CACHE STRING "Toggle local queriables")
 set(Z_FEATURE_ADMIN_SPACE 0 CACHE STRING "Toggle admin space support")
 
@@ -366,8 +365,40 @@ if(Z_FEATURE_LINK_SERIAL_USB AND NOT Z_FEATURE_UNSTABLE_API)
   set(Z_FEATURE_LINK_SERIAL_USB 0 CACHE STRING "Toggle Serial USB links" FORCE)
 endif()
 
+if (Z_FEATURE_RAWETH_TRANSPORT AND NOT Z_FEATURE_MULTICAST_TRANSPORT)
+  message(WARNING "Z_FEATURE_RAWETH_TRANSPORT requires Z_FEATURE_MULTICAST_TRANSPORT to be enabled. Disabling Z_FEATURE_RAWETH_TRANSPORT.")
+  set(Z_FEATURE_RAWETH_TRANSPORT 0 CACHE STRING "Toggle raw ethernet transport" FORCE)
+endif()
+
 if(Z_FEATURE_LINK_WS AND NOT ZP_SYSTEM_LAYER STREQUAL "emscripten")
   message(FATAL_ERROR "Z_FEATURE_LINK_WS is currently only supported on the emscripten platform.")
+endif()
+
+if (Z_FEATURE_UNICAST_TRANSPORT AND 
+  NOT(Z_FEATURE_LINK_TCP 
+    OR Z_FEATURE_LINK_UDP_UNICAST 
+    OR Z_FEATURE_LINK_WS 
+    OR Z_FEATURE_LINK_BLUETOOTH
+    OR Z_FEATURE_LINK_SERIAL
+    OR Z_FEATURE_LINK_TLS)
+  )
+  message(WARNING "Z_FEATURE_UNICAST_TRANSPORT requires at least one unicast link to be enabled. Disabling Z_FEATURE_UNICAST_TRANSPORT.")
+  set(Z_FEATURE_UNICAST_TRANSPORT 0 CACHE STRING "Toggle unicast transport" FORCE)
+endif()
+
+if (Z_FEATURE_UNICAST_PEER AND NOT Z_FEATURE_UNICAST_TRANSPORT)
+  message(WARNING "Z_FEATURE_UNICAST_PEER requires Z_FEATURE_UNICAST_TRANSPORT to be enabled. Disabling Z_FEATURE_UNICAST_PEER.")
+  set(Z_FEATURE_UNICAST_PEER 0 CACHE STRING "Toggle Unicast peer mode" FORCE)
+endif()
+
+if (Z_FEATURE_UNICAST_PEER AND NOT(Z_FEATURE_LINK_TCP OR Z_FEATURE_LINK_UDP_UNICAST OR  Z_FEATURE_LINK_TLS))
+  message(WARNING "Z_FEATURE_UNICAST_PEER requires at least one listen-capable unicast link to be enabled. Disabling Z_FEATURE_UNICAST_PEER.")
+  set(Z_FEATURE_UNICAST_PEER 0 CACHE STRING "Toggle Unicast peer mode" FORCE)
+endif()
+
+if (Z_FEATURE_MULTICAST_TRANSPORT AND NOT (Z_FEATURE_LINK_UDP_MULTICAST OR Z_FEATURE_LINK_BLUETOOTH OR Z_FEATURE_RAWETH_TRANSPORT))
+  message(WARNING "Z_FEATURE_MULTICAST_TRANSPORT requires at least one multicast transport to be enabled. Disabling Z_FEATURE_MULTICAST_TRANSPORT.")
+  set(Z_FEATURE_MULTICAST_TRANSPORT 0 CACHE STRING "Toggle multicast transport" FORCE)
 endif()
 
 if(Z_FEATURE_CONNECTIVITY AND NOT Z_FEATURE_UNSTABLE_API)
@@ -390,11 +421,15 @@ if(ZP_SYSTEM_LAYER STREQUAL "freertos_plus_tcp" AND Z_FEATURE_LINK_UDP_MULTICAST
   set(Z_FEATURE_LINK_UDP_MULTICAST 0 CACHE STRING "Toggle UDP multicast links" FORCE)
 endif()
 
-if(Z_FEATURE_ADVANCED_PUBLICATION AND (NOT Z_FEATURE_UNSTABLE_API OR NOT Z_FEATURE_PUBLICATION OR NOT Z_FEATURE_LIVELINESS))
-  message(WARNING "Z_FEATURE_ADVANCED_PUBLICATION can only be enabled when Z_FEATURE_UNSTABLE_API, Z_FEATURE_PUBLICATION and Z_FEATURE_LIVELINESS is also enabled. Disabling Z_FEATURE_ADVANCED_PUBLICATION.")
+if(Z_FEATURE_ADVANCED_PUBLICATION AND NOT (Z_FEATURE_UNSTABLE_API AND Z_FEATURE_PUBLICATION AND Z_FEATURE_LIVELINESS AND Z_FEATURE_QUERYABLE))
+  message(WARNING "Z_FEATURE_ADVANCED_PUBLICATION can only be enabled when Z_FEATURE_UNSTABLE_API, Z_FEATURE_PUBLICATION, Z_FEATURE_LIVELINESS and Z_FEATURE_QUERYABLE is also enabled. Disabling Z_FEATURE_ADVANCED_PUBLICATION.")
   set(Z_FEATURE_ADVANCED_PUBLICATION 0 CACHE STRING "Toggle advanced publication feature" FORCE)
 endif()
 
+if(Z_FEATURE_ADVANCED_SUBSCRIPTION AND NOT (Z_FEATURE_UNSTABLE_API AND Z_FEATURE_SUBSCRIPTION AND Z_FEATURE_LIVELINESS AND Z_FEATURE_QUERY))
+  message(WARNING "Z_FEATURE_ADVANCED_SUBSCRIPTION can only be enabled when Z_FEATURE_UNSTABLE_API, Z_FEATURE_SUBSCRIPTION, Z_FEATURE_LIVELINESS and Z_FEATURE_QUERY is also enabled. Disabling Z_FEATURE_ADVANCED_SUBSCRIPTION.")
+  set(Z_FEATURE_ADVANCED_SUBSCRIPTION 0 CACHE STRING "Toggle advanced subscription feature" FORCE)
+endif()
 
 if(Z_FEATURE_ADMIN_SPACE AND NOT Z_FEATURE_UNSTABLE_API)
   message(WARNING "Z_FEATURE_ADMIN_SPACE can only be enabled when Z_FEATURE_UNSTABLE_API is enabled. Disabling Z_FEATURE_ADMIN_SPACE.")
@@ -558,7 +593,9 @@ file(GLOB LinkSources
 )
 list(APPEND Sources ${LinkSources})
 list(APPEND Sources
-  "${PROJECT_SOURCE_DIR}/src/link/link.c"
+  "${PROJECT_SOURCE_DIR}/src/link/unicast_link.c"
+  "${PROJECT_SOURCE_DIR}/src/link/multicast_link.c"
+  "${PROJECT_SOURCE_DIR}/src/link/address.c"
   "${PROJECT_SOURCE_DIR}/src/link/endpoint.c"
   "${PROJECT_SOURCE_DIR}/src/link/transport/tcp/address.c"
   "${PROJECT_SOURCE_DIR}/src/link/transport/udp/address.c"
@@ -775,8 +812,6 @@ if(UNIX OR MSVC)
     add_executable(z_condvar_wait_until_test ${PROJECT_SOURCE_DIR}/tests/z_condvar_wait_until_test.c)
     add_executable(z_sync_group_test ${PROJECT_SOURCE_DIR}/tests/z_sync_group_test.c)
     add_executable(z_cancellation_token_test ${PROJECT_SOURCE_DIR}/tests/z_cancellation_token_test.c)
-    add_executable(z_local_loopback_test ${PROJECT_SOURCE_DIR}/tests/z_local_loopback_test.c)
-    add_executable(z_open_test ${PROJECT_SOURCE_DIR}/tests/z_open_test.c)
     add_executable(z_json_encoder_test ${PROJECT_SOURCE_DIR}/tests/z_json_encoder_test.c)
     add_executable(z_executor_test ${PROJECT_SOURCE_DIR}/tests/z_executor_test.c)
     add_executable(z_background_executor_test ${PROJECT_SOURCE_DIR}/tests/z_background_executor_test.c)
@@ -821,12 +856,6 @@ if(UNIX OR MSVC)
     target_link_libraries(z_condvar_wait_until_test zenohpico::lib)
     target_link_libraries(z_sync_group_test zenohpico::lib)
     target_link_libraries(z_cancellation_token_test zenohpico::lib)
-    target_link_libraries(z_local_loopback_test zenohpico::lib)
-    target_link_libraries(z_open_test zenohpico::lib)
-    if(CHECK_THREADS)
-      target_link_libraries(z_open_test Threads::Threads)
-    endif()
-    target_compile_definitions(z_local_loopback_test PRIVATE Z_TEST_HOOKS=1)
     if(PICO_SHARED)
       target_compile_definitions(${Libname}_shared PRIVATE Z_TEST_HOOKS=1)
     endif()
@@ -889,8 +918,6 @@ if(UNIX OR MSVC)
     add_test(z_condvar_wait_until_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_condvar_wait_until_test)
     add_test(z_sync_group_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_sync_group_test)
     add_test(z_cancellation_token_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_cancellation_token_test)
-    add_test(z_local_loopback_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_local_loopback_test)
-    add_test(z_open_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_open_test)
     add_test(z_json_encoder_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_json_encoder_test)
     add_test(z_executor_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_executor_test)
     add_test(z_background_executor_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_background_executor_test)
@@ -977,12 +1004,12 @@ endif()
       add_test(z_api_cancellation_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_cancellation_test)
       add_test(z_api_matching_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_matching_test)
       add_test(z_api_source_info_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_source_info_test)
-      add_test(z_api_connectivity_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_connectivity_test)
+      add_test(z_api_connectivity_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_api_connectivity_test)
       add_test(z_api_queryable_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_queryable_test)
       add_test(z_api_advanced_pubsub_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_advanced_pubsub_test)
       add_test(z_api_local_queryable_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_local_queryable_test)
       add_test(z_api_local_subscriber_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_local_subscriber_test)
-      add_test(z_api_admin_space_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_admin_space_test)
+      add_test(z_api_admin_space_test ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/z_api_admin_space_test)
       add_test(z_multi_pubsub_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_multi_pubsub_test)
       add_test(z_multi_queryable_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_multi_queryable_test)
       add_test(z_api_callback_drop_on_undeclare_test bash ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/api.sh z_api_callback_drop_on_undeclare_test)

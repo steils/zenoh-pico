@@ -35,7 +35,9 @@ extern "C" {
 #define _ZP_VECTOR_TEMPLATE_ELEM_DESTROY_FN(x) _z_slice_clear(x)
 #define _ZP_VECTOR_TEMPLATE_ELEM_MOVE_FN(dst, src) (*(dst) = *(src), *(src) = _z_slice_null())
 #define _ZP_VECTOR_TEMPLATE_ALLOC_FN z_malloc
+#if defined(_ZP_PLATFORM_HAS_REALLOC)
 #define _ZP_VECTOR_TEMPLATE_REALLOC_FN z_realloc
+#endif
 #define _ZP_VECTOR_TEMPLATE_FREE_FN z_free
 #include "zenoh-pico/collections/vector_template.h"
 

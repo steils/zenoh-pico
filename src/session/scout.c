@@ -15,11 +15,10 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "zenoh-pico/link/manager.h"
+#include "zenoh-pico/link/unicast_link.h"
 #include "zenoh-pico/protocol/codec/transport.h"
 #include "zenoh-pico/protocol/core.h"
 #include "zenoh-pico/system/platform.h"
-#include "zenoh-pico/transport/multicast.h"
 #include "zenoh-pico/utils/logging.h"
 
 #if Z_FEATURE_SCOUTING == 1
@@ -34,27 +33,23 @@ static _z_hello_slist_t *__z_scout_loop(const _z_wbuf_t *wbf, _z_string_t *locat
 
     _z_endpoint_t ep;
     err = _z_endpoint_from_string(&ep, locator);
-
 #if Z_FEATURE_SCOUTING == 1
     _z_string_t cmp_str = _z_string_alias_str(UDP_SCHEMA);
-    if ((err == _Z_RES_OK) && _z_string_equals(&ep._locator._protocol, &cmp_str)) {
-        _z_endpoint_clear(&ep);
-    } else
+    if ((err != _Z_RES_OK) || !_z_string_equals(&ep._locator._protocol, &cmp_str))
 #endif
-        if (err == _Z_RES_OK) {
+    {
         _z_endpoint_clear(&ep);
         _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
         err = _Z_ERR_TRANSPORT_NOT_AVAILABLE;
     }
 
     if (err == _Z_RES_OK) {
-        _z_link_t zl;
-        memset(&zl, 0, sizeof(_z_link_t));
+        _z_unicast_link_t zl = _z_unicast_link_null();
         _z_zbuf_t zbf = _z_zbuf_null();
-        err = _z_open_link(&zl, locator, NULL);
+        err = _z_unicast_link_create(&zl, &ep, NULL);
         if (err == _Z_RES_OK) {
             // Send the scout message
-            if (_z_link_send_wbuf(&zl, wbf, NULL) != _Z_RES_OK) {
+            if (!_z_unicast_link_send_wbuf(&zl, wbf)) {
                 err = _Z_ERR_TRANSPORT_TX_FAILED;
                 _Z_ERROR_LOG(err);
             } else if (_z_zbuf_init(&zbf, Z_BATCH_UNICAST_SIZE) != _Z_RES_OK) {
@@ -67,8 +62,7 @@ static _z_hello_slist_t *__z_scout_loop(const _z_wbuf_t *wbf, _z_string_t *locat
                     _z_zbuf_reset(&zbf);
 
                     // Read bytes from the socket
-                    size_t len = _z_link_recv_zbuf(&zl, &zbf, NULL);
-                    if (len == SIZE_MAX) {
+                    if (!_z_unicast_link_recv_zbuf(&zl, &zbf)) {
                         continue;
                     }
 
@@ -126,8 +120,9 @@ static _z_hello_slist_t *__z_scout_loop(const _z_wbuf_t *wbf, _z_string_t *locat
                 }
             }
             _z_zbuf_clear(&zbf);
-            _z_link_clear(&zl);
+            _z_unicast_link_clear(&zl);
         } else {
+            _z_endpoint_clear(&ep);
             _Z_ERROR_LOG(_Z_ERR_TRANSPORT_OPEN_FAILED);
             err = _Z_ERR_TRANSPORT_OPEN_FAILED;
         }

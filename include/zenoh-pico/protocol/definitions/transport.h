@@ -80,7 +80,7 @@ extern "C" {
 //      Z Extensions       if Z==1 then Zenoh extensions are present
 #define _Z_FLAG_T_FRAME_R 0x20  // 1 << 5
 
-// Frame message flags:
+// Fragment message flags:
 //      R Reliable         if R==1 it concerns the reliable channel, else the best-effort channel
 //      M More             if M==1 then other fragments will follow
 //      Z Extensions       if Z==1 then Zenoh extensions are present
@@ -229,26 +229,31 @@ void _z_s_msg_hello_clear(_z_s_msg_hello_t *msg);
 typedef struct {
     _z_zint_t _reliable;
     _z_zint_t _best_effort;
-} _z_coundit_sn_t;
-typedef struct {
-    union {
-        _z_coundit_sn_t _plain;
-        _z_coundit_sn_t _qos[Z_PRIORITIES_NUM];
-    } _val;
-    bool _is_qos;
-} _z_conduit_sn_list_t;
+} _z_sn_t;
+
+static inline _z_zint_t *_z_sn_get(_z_sn_t *sn, z_reliability_t reliability) {
+    return (reliability == Z_RELIABILITY_RELIABLE) ? &sn->_reliable : &sn->_best_effort;
+}
+
+static inline void _z_sn_increment(_z_zint_t *sn, _z_zint_t res) { *sn = (*sn + (_z_zint_t)1) & res; }
+static inline void _z_sn_decrement(_z_zint_t *sn, _z_zint_t res) { *sn = (*sn - (_z_zint_t)1) & res; }
+static inline void _z_sn_decrement_all(_z_sn_t *sn, _z_zint_t res) {
+    _z_sn_decrement(&sn->_reliable, res);
+    _z_sn_decrement(&sn->_best_effort, res);
+}
 typedef struct {
     _z_id_t _zid;
     _z_zint_t _lease;
-    _z_conduit_sn_list_t _next_sn;
-    uint16_t _batch_size;
+    _z_sn_t _next_sn;
     z_whatami_t _whatami;
+    uint16_t _batch_size;
     uint8_t _req_id_res;
     uint8_t _seq_num_res;
     uint8_t _version;
 #if Z_FEATURE_FRAGMENTATION == 1
     uint8_t _patch;
 #endif
+    bool _is_qos;
 } _z_t_msg_join_t;
 /*------------------ Init Message ------------------*/
 // # Init message
@@ -400,12 +405,16 @@ typedef struct {
 /*=============================*/
 /*        Close reasons        */
 /*=============================*/
-#define _Z_CLOSE_GENERIC 0x00
-#define _Z_CLOSE_UNSUPPORTED 0x01
-#define _Z_CLOSE_INVALID 0x02
-#define _Z_CLOSE_MAX_TRANSPORTS 0x03
-#define _Z_CLOSE_MAX_LINKS 0x04
-#define _Z_CLOSE_EXPIRED 0x05
+typedef enum _z_close_reason_t {
+    _Z_CLOSE_REASON_GENERIC = 0x00,
+    _Z_CLOSE_REASON_UNSUPPORTED = 0x01,
+    _Z_CLOSE_REASON_INVALID = 0x02,
+    _Z_CLOSE_REASON_MAX_TRANSPORTS = 0x03,
+    _Z_CLOSE_REASON_MAX_LINKS = 0x04,
+    _Z_CLOSE_REASON_EXPIRED = 0x05,
+    _Z_CLOSE_REASON_UNRESPONSIVE = 0x06,
+    _Z_CLOSE_REASON_CONNECTION_TO_SELF = 0x07
+} _z_close_reason_t;
 
 /*------------------ Keep Alive Message ------------------*/
 // NOTE: 16 bits (2 bytes) may be prepended to the serialized message indicating the total length
@@ -511,13 +520,13 @@ typedef struct {
 z_reliability_t _z_t_msg_get_reliability(_z_transport_message_t *msg);
 
 /*------------------ Builders ------------------*/
-_z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, _z_id_t zid,
-                                          _z_conduit_sn_list_t next_sn);
-_z_transport_message_t _z_t_msg_make_init_syn(z_whatami_t whatami, _z_id_t zid);
+_z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, _z_id_t zid, _z_sn_t next_sn,
+                                          uint16_t batch_size);
+_z_transport_message_t _z_t_msg_make_init_syn(z_whatami_t whatami, _z_id_t zid, uint16_t batch_size);
 _z_transport_message_t _z_t_msg_make_init_ack(z_whatami_t whatami, _z_id_t zid, const _z_slice_t *cookie);
 _z_transport_message_t _z_t_msg_make_open_syn(_z_zint_t lease, _z_zint_t initial_sn, const _z_slice_t *cookie);
 _z_transport_message_t _z_t_msg_make_open_ack(_z_zint_t lease, _z_zint_t initial_sn);
-_z_transport_message_t _z_t_msg_make_close(uint8_t reason, bool link_only);
+_z_transport_message_t _z_t_msg_make_close(_z_close_reason_t reason, bool link_only);
 _z_transport_message_t _z_t_msg_make_keep_alive(void);
 _z_transport_message_t _z_t_msg_make_frame(_z_zint_t sn, const _z_zbuf_t *payload, z_reliability_t reliability);
 _z_transport_message_t _z_t_msg_make_frame_header(_z_zint_t sn, z_reliability_t reliability);

@@ -71,6 +71,9 @@ typedef struct {
     _z_slice_t _slice;
 } _z_string_t;
 
+#define _Z_STRING_PRINT_FORMAT "%.*s"
+#define _Z_STRING_PRINT_ARG(s) (int)_z_string_len(s), _z_string_data(s)
+
 // Warning: None of the sub-types require a non-0 initialization. Add a init function if it changes.
 static inline _z_string_t _z_string_null(void) { return (_z_string_t){0}; }
 static inline bool _z_string_check(const _z_string_t *value) { return !_z_slice_is_empty(&value->_slice); }
@@ -128,7 +131,7 @@ int _z_string_compare(const _z_string_t *left, const _z_string_t *right);
 int _z_substring_compare(const _z_string_t *left, size_t left_start, size_t left_len, const _z_string_t *right,
                          size_t right_start, size_t right_len);
 bool _z_string_equals(const _z_string_t *left, const _z_string_t *right);
-_z_string_t _z_string_convert_bytes_le(const _z_slice_t *bs);
+z_result_t _z_str_convert_bytes_le(const _z_slice_t *bs, char *out_str, size_t *out_len);
 z_result_t _z_string_preallocate(_z_string_t *s, const size_t len);
 z_result_t _z_string_concat_substr(_z_string_t *s, const _z_string_t *left, const char *right, size_t len,
                                    const char *separator, size_t separator_len);
@@ -150,9 +153,18 @@ typedef struct _z_string_view_t {
     _z_string_t _target;
 } _z_string_view_t;
 
+#define _Z_STRING_VIEW_PRINT_FORMAT _Z_STRING_PRINT_FORMAT
+#define _Z_STRING_VIEW_PRINT_ARG(s) (int)_z_string_view_len(s), _z_string_view_data(s)
+
 static inline _z_string_view_t _z_string_view_make(const char *start, size_t len) {
     _z_string_view_t s;
     s._target = _z_string_from_substr_custom_deleter((char *)start, len, _z_delete_context_null());
+    return s;
+}
+
+static inline _z_string_view_t _z_string_view_make_from_str(const char *start) {
+    _z_string_view_t s;
+    s._target = _z_string_from_str_custom_deleter((char *)start, _z_delete_context_null());
     return s;
 }
 

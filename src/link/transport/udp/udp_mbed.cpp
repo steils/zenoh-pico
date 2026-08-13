@@ -93,24 +93,6 @@ static size_t _z_udp_mbed_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t le
     return (size_t)rb;
 }
 
-static size_t _z_udp_mbed_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_udp_mbed_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
-}
-
 static size_t _z_udp_mbed_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
                                 const _z_sys_net_endpoint_t endpoint) {
     nsapi_size_or_error_t wb = sock._udp->sendto(*endpoint._iptcp, ptr, len);
@@ -138,10 +120,6 @@ void _z_udp_unicast_close(_z_sys_net_socket_t *sock) { _z_udp_mbed_close(sock); 
 
 size_t _z_udp_unicast_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
     return _z_udp_mbed_read(sock, ptr, len);
-}
-
-size_t _z_udp_unicast_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    return _z_udp_mbed_read_exact(sock, ptr, len);
 }
 
 size_t _z_udp_unicast_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

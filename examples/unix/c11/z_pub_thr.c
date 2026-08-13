@@ -21,11 +21,6 @@
 #include "zenoh-pico.h"
 #include "zenoh-pico/protocol/codec.h"
 
-#define ZENOH_MSH_HDR_SIZE 3
-#define ZENOH_FRAME_HDR_SIZE 2
-#define ZENOH_TCP_MTU 49150
-#define ZENOH_UDP_MTU 1450
-#define ZENOH_TCP_PEER_MTU 65533
 #define TEST_RUN_TIME_S 20
 
 typedef struct {
@@ -37,7 +32,7 @@ typedef struct {
 #if Z_FEATURE_PUBLICATION == 1 && Z_FEATURE_MULTI_THREAD == 1
 
 static int parse_args(int argc, char **argv, z_owned_config_t *config, char **ke, unsigned long *freq, size_t *pkt_size,
-                      bool *is_peer, bool *is_udp);
+                      bool *batching);
 
 unsigned long cas_loop(z_stats_t *ctx, unsigned long value) {
     unsigned long prev_val = atomic_load_explicit(&ctx->count, memory_order_relaxed);
@@ -78,51 +73,17 @@ void *stop_task(void *ctx) {
 int main(int argc, char **argv) {
     char *keyexpr = "thr";
     size_t len = 8;
-    bool is_peer = false;
-    bool is_udp = false;
 
     z_stats_t *context = malloc(sizeof(z_stats_t));
     atomic_store_explicit(&context->count, 0, memory_order_relaxed);
     context->frequency = 10;
 
-    // Calculate max mtu batch size
-    size_t batch_size = 0;
-#if Z_FEATURE_BATCHING == 1
-    uint_fast8_t vle_size = _z_zint_len(len);
-    uint_fast8_t vle_str = _z_zint_len(strlen(keyexpr));
-    size_t msg_size = 0;
-    size_t max_mtu_size = 0;
-    size_t zenoh_overhead = 0;
-    if (is_peer) {
-        if ((is_udp)) {
-            zenoh_overhead = vle_size + vle_str + strlen(keyexpr) + ZENOH_MSH_HDR_SIZE;
-            msg_size = len + zenoh_overhead;
-            max_mtu_size = (ZENOH_UDP_MTU - ZENOH_FRAME_HDR_SIZE);
-        } else {
-            zenoh_overhead = vle_size + ZENOH_MSH_HDR_SIZE;
-            msg_size = len + zenoh_overhead;
-            max_mtu_size = (ZENOH_TCP_PEER_MTU - ZENOH_FRAME_HDR_SIZE);
-        }
-        batch_size = max_mtu_size / msg_size;
-    }
-    if (!is_peer) {
-        zenoh_overhead = vle_size + ZENOH_MSH_HDR_SIZE;
-        msg_size = len + zenoh_overhead;
-        max_mtu_size = (ZENOH_TCP_MTU - ZENOH_FRAME_HDR_SIZE);
-        batch_size = max_mtu_size / msg_size;
-    }
-    if (batch_size < 2) {
-        batch_size = 0;
-    }
-    // double overhead = (double)(ZENOH_FRAME_HDR_SIZE) / (ZENOH_FRAME_HDR_SIZE + (double)(msg_size * batch_size)) +
-    //                   (double)(zenoh_overhead);
-#endif
-
     // Set config
     z_owned_config_t config;
     z_config_default(&config);
+    bool batching = false;
 
-    int ret = parse_args(argc, argv, &config, &keyexpr, &context->frequency, &len, &is_peer, &is_udp);
+    int ret = parse_args(argc, argv, &config, &keyexpr, &context->frequency, &len, &batching);
     if (ret != 0) {
         return ret;
     }
@@ -162,9 +123,8 @@ int main(int argc, char **argv) {
     pthread_create(&task2, NULL, stop_task, &stop_flag);
 
     // Send packets
-    (void)batch_size;
 #if Z_FEATURE_BATCHING == 1
-    if (batch_size > 0) zp_batch_start(z_loan(s));
+    if (batching) zp_batch_start(z_loan(s));
 #endif
     while (!stop_flag) {
         z_owned_bytes_t payload;
@@ -173,7 +133,7 @@ int main(int argc, char **argv) {
         atomic_fetch_add_explicit(&context->count, 1, memory_order_relaxed);
     }
 #if Z_FEATURE_BATCHING == 1
-    if (batch_size > 0) zp_batch_stop(z_loan(s));
+    if (batching) zp_batch_stop(z_loan(s));
 #endif
 
     // Clean up
@@ -189,30 +149,25 @@ int main(int argc, char **argv) {
 // Note: All args can be specified multiple times. For "-e" it will append the list of endpoints, for the other it will
 // simply replace the previous value.
 static int parse_args(int argc, char **argv, z_owned_config_t *config, char **ke, unsigned long *freq, size_t *pkt_size,
-                      bool *is_peer, bool *is_udp) {
+                      bool *batching) {
     int opt;
-    while ((opt = getopt(argc, argv, "k:e:m:l:f:s:")) != -1) {
+    while ((opt = getopt(argc, argv, "k:e:m:l:f:s:b")) != -1) {
+        z_result_t ret = Z_OK;
         switch (opt) {
+            case 'b':
+                *batching = true;
+                break;
             case 'k':
                 *ke = optarg;
                 break;
             case 'e':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, optarg);
-                if (strncmp(optarg, "udp", 3) == 0) {
-                    *is_udp = true;
-                }
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, optarg);
                 break;
             case 'm':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_MODE_KEY, optarg);
-                if (strcmp(optarg, "peer") == 0) {
-                    *is_peer = true;
-                }
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_MODE_KEY, optarg);
                 break;
             case 'l':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_LISTEN_KEY, optarg);
-                if (strncmp(optarg, "udp", 3) == 0) {
-                    *is_udp = true;
-                }
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_LISTEN_KEY, optarg);
                 break;
             case 'f':
                 *freq = (unsigned long)atoi(optarg);
@@ -229,7 +184,11 @@ static int parse_args(int argc, char **argv, z_owned_config_t *config, char **ke
                 }
                 return 1;
             default:
-                return -1;
+                ret = _Z_ERR_INVALID;
+        }
+        if (ret != Z_OK) {
+            fprintf(stderr, "Failed to set config option for -%c: %d\n", opt, ret);
+            return 1;
         }
     }
     return 0;

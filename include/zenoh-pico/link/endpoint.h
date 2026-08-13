@@ -44,6 +44,9 @@ extern "C" {
 #if Z_FEATURE_LINK_TLS == 1
 #define TLS_SCHEMA "tls"
 #endif
+#if Z_FEATURE_RAWETH_TRANSPORT == 1
+#define RAWETH_SCHEMA "reth"
+#endif
 
 #define LOCATOR_PROTOCOL_SEPARATOR '/'
 #define LOCATOR_METADATA_SEPARATOR '?'
@@ -75,10 +78,16 @@ typedef struct {
     _z_str_intmap_t _config;
 } _z_endpoint_t;
 
+_z_endpoint_t _z_endpoint_null(void);
 _z_string_t _z_endpoint_to_string(const _z_endpoint_t *e);
 z_result_t _z_endpoint_from_string(_z_endpoint_t *ep, const _z_string_t *s);
+static inline void _z_endpoint_move(_z_endpoint_t *dst, _z_endpoint_t *src) {
+    dst->_locator = src->_locator;
+    _z_locator_init(&src->_locator);
+    _z_str_intmap_move(&dst->_config, &src->_config);
+}
+
 void _z_endpoint_clear(_z_endpoint_t *ep);
-void _z_endpoint_free(_z_endpoint_t **ep);
 
 char *_z_endpoint_parse_host(const _z_string_t *addr);
 char *_z_endpoint_parse_port(const _z_string_t *addr);

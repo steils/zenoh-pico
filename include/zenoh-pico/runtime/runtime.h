@@ -38,6 +38,16 @@ static inline _z_fut_handle_t _z_runtime_spawn(_z_runtime_t *runtime, _z_fut_t *
 static inline z_result_t _z_runtime_cancel_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
     return _z_background_executor_cancel_fut(runtime, handle);
 }
+static inline z_result_t _z_runtime_resume_suspended_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
+    return _z_background_executor_resume_suspended_fut(runtime, handle);
+}
+static inline z_result_t _z_runtime_wakeup_sleeping_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
+    return _z_background_executor_wakeup_sleeping_fut(runtime, handle);
+}
+static inline z_result_t _z_runtime_resume_suspended_or_wakeup_sleeping_fut(_z_runtime_t *runtime,
+                                                                            _z_fut_handle_t *handle) {
+    return _z_background_executor_resume_suspended_or_wakeup_sleeping_fut(runtime, handle);
+}
 static inline z_result_t _z_runtime_init(_z_runtime_t *runtime) {
     return _z_background_executor_init_deferred(runtime);
 }
@@ -61,6 +71,19 @@ static inline void _z_runtime_clear(_z_runtime_t *runtime) { _z_executor_destroy
 static inline void _z_runtime_null(_z_runtime_t *runtime) { _z_executor_null(runtime); }
 static inline z_result_t _z_runtime_cancel_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
     _z_executor_cancel_fut(runtime, handle);
+    return _Z_RES_OK;
+}
+static inline z_result_t _z_runtime_resume_suspended_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
+    _z_executor_resume_suspended_fut(runtime, handle);
+    return _Z_RES_OK;
+}
+static inline z_result_t _z_runtime_wakeup_sleeping_fut(_z_runtime_t *runtime, _z_fut_handle_t *handle) {
+    _z_executor_wakeup_sleeping_fut(runtime, handle);
+    return _Z_RES_OK;
+}
+static inline z_result_t _z_runtime_resume_suspended_or_wakeup_sleeping_fut(_z_runtime_t *runtime,
+                                                                            _z_fut_handle_t *handle) {
+    _z_executor_resume_suspended_or_wakeup_sleeping_fut(runtime, handle);
     return _Z_RES_OK;
 }
 // Returns true if there is more work to do, false if the runtime is idle and can sleep until the next wake-up time.

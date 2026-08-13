@@ -23,28 +23,18 @@ z_result_t _z_ws_endpoint_init(_z_sys_net_endpoint_t *ep, const _z_string_t *add
 
 void _z_ws_endpoint_clear(_z_sys_net_endpoint_t *ep) { _z_tcp_endpoint_clear(ep); }
 
-z_result_t _z_ws_transport_open(_z_ws_socket_t *sock, uint32_t tout) {
-    return _z_tcp_open(&sock->_sock, sock->_rep, tout);
+z_result_t _z_ws_transport_open(_z_sys_net_socket_t *sock, const _z_sys_net_endpoint_t endpoint, uint32_t tout) {
+    return _z_tcp_open(sock, endpoint, tout);
 }
 
-z_result_t _z_ws_transport_listen(_z_ws_socket_t *sock) { return _z_tcp_listen(&sock->_sock, sock->_rep); }
+void _z_ws_transport_close(_z_sys_net_socket_t *sock) { _z_tcp_close(sock); }
 
-void _z_ws_transport_close(_z_ws_socket_t *sock) { _z_tcp_close(&sock->_sock); }
-
-size_t _z_ws_transport_read(const _z_ws_socket_t *sock, uint8_t *ptr, size_t len) {
-    return _z_tcp_read(sock->_sock, ptr, len);
+size_t _z_ws_transport_read(const _z_sys_net_socket_t *sock, uint8_t *ptr, size_t len) {
+    return _z_tcp_read(*sock, ptr, len);
 }
 
-size_t _z_ws_transport_read_exact(const _z_ws_socket_t *sock, uint8_t *ptr, size_t len) {
-    return _z_tcp_read_exact(sock->_sock, ptr, len);
-}
-
-size_t _z_ws_transport_write(const _z_ws_socket_t *sock, const uint8_t *ptr, size_t len) {
-    return _z_tcp_write(sock->_sock, ptr, len);
-}
-
-size_t _z_ws_transport_read_socket(const _z_sys_net_socket_t socket, uint8_t *ptr, size_t len) {
-    return _z_tcp_read(socket, ptr, len);
+size_t _z_ws_transport_write(const _z_sys_net_socket_t *sock, const uint8_t *ptr, size_t len) {
+    return _z_tcp_write(*sock, ptr, len);
 }
 
 #endif

@@ -267,9 +267,7 @@ char *gen_str(size_t size) {
 _z_string_view_t gen_string(size_t len) {
     // gen_str stores the string in STRING_STORAGE; only alias it here instead of copying.
     char *str = gen_str(len);
-    // SAFETY: gen_str returns a null-terminated string, so strlen is safe to call.
-    // Flawfinder: ignore [CWE-126]
-    return _z_string_view_make(str, strlen(str));
+    return _z_string_view_make_from_str(str);
 }
 
 _z_locator_array_t gen_locator_array(size_t size) {
@@ -1763,17 +1761,11 @@ void oam_message(void) {
 }
 
 _z_transport_message_t gen_join(void) {
-    _z_conduit_sn_list_t conduit = {._is_qos = gen_bool()};
-    if (conduit._is_qos) {
-        for (int i = 0; i < Z_PRIORITIES_NUM; i++) {
-            conduit._val._qos[i]._best_effort = gen_zint();
-            conduit._val._qos[i]._reliable = gen_zint();
-        }
-    } else {
-        conduit._val._plain._best_effort = gen_zint();
-        conduit._val._plain._reliable = gen_zint();
-    }
-    return _z_t_msg_make_join(_z_whatami_from_uint8((gen_uint8() % 3)), gen_zint(), gen_zid(), conduit);
+    _z_sn_t next_sn;
+    next_sn._best_effort = gen_zint();
+    next_sn._reliable = gen_zint();
+    uint16_t batch_size = gen_uint16();
+    return _z_t_msg_make_join(_z_whatami_from_uint8((gen_uint8() % 3)), gen_zint(), gen_zid(), next_sn, batch_size);
 }
 void assert_eq_join(const _z_t_msg_join_t *left, const _z_t_msg_join_t *right) {
     assert(memcmp(left->_zid.id, right->_zid.id, 16) == 0);
@@ -1783,16 +1775,8 @@ void assert_eq_join(const _z_t_msg_join_t *left, const _z_t_msg_join_t *right) {
     assert(left->_req_id_res == right->_req_id_res);
     assert(left->_seq_num_res == right->_seq_num_res);
     assert(left->_version == right->_version);
-    assert(left->_next_sn._is_qos == right->_next_sn._is_qos);
-    if (left->_next_sn._is_qos) {
-        for (int i = 0; i < Z_PRIORITIES_NUM; i++) {
-            assert(left->_next_sn._val._qos[i]._best_effort == right->_next_sn._val._qos[i]._best_effort);
-            assert(left->_next_sn._val._qos[i]._reliable == right->_next_sn._val._qos[i]._reliable);
-        }
-    } else {
-        assert(left->_next_sn._val._plain._best_effort == right->_next_sn._val._plain._best_effort);
-        assert(left->_next_sn._val._plain._reliable == right->_next_sn._val._plain._reliable);
-    }
+    assert(left->_next_sn._best_effort == right->_next_sn._best_effort);
+    assert(left->_next_sn._reliable == right->_next_sn._reliable);
 }
 void join_message(void) {
     printf("\n>> Join message\n");
@@ -1810,7 +1794,7 @@ void join_message(void) {
 
 _z_transport_message_t gen_init(void) {
     if (gen_bool()) {
-        return _z_t_msg_make_init_syn(_z_whatami_from_uint8((gen_uint8() % 3)), gen_zid());
+        return _z_t_msg_make_init_syn(_z_whatami_from_uint8((gen_uint8() % 3)), gen_zid(), Z_BATCH_UNICAST_SIZE);
     } else {
         _z_slice_view_t cookie = gen_slice(16);
         return _z_t_msg_make_init_ack(_z_whatami_from_uint8((gen_uint8() % 3)), gen_zid(),
@@ -1867,7 +1851,10 @@ void open_message(void) {
     _z_wbuf_clear(&wbf);
 }
 
-_z_transport_message_t gen_close(void) { return _z_t_msg_make_close(gen_uint8(), gen_bool()); }
+_z_transport_message_t gen_close(void) {
+    _z_close_reason_t reason = (_z_close_reason_t)(gen_uint8() % 8);
+    return _z_t_msg_make_close(reason, gen_bool());
+}
 void assert_eq_close(const _z_t_msg_close_t *left, const _z_t_msg_close_t *right) {
     assert(left->_reason == right->_reason);
 }

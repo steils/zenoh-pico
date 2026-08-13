@@ -45,6 +45,20 @@ void _z_uuid_to_bytes(uint8_t *bytes, const char *uuid_str);
 _z_string_t _z_id_to_string(const _z_id_t *id);
 
 /**
+ * Converts an Zenoh ID to string and writes it to a pre-allocated buffer.
+ *
+ * Parameters:
+ *   id: Zenoh ID.
+ *   out_str: Pointer to an already allocated buffer to hold the string representation.
+ *   out_len: Pointer to the size of the buffer. On return, it will hold the actual length of the string (even in case
+ * of failure).
+ *
+ * Returns:
+ *   Result of the operation.
+ */
+z_result_t _z_id_to_str(const _z_id_t *id, char *out_str, size_t *out_len);
+
+/**
  * Parses a string to a Zenoh ID.
  *
  * Parameters:

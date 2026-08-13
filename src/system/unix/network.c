@@ -56,47 +56,43 @@ void _z_socket_close(_z_sys_net_socket_t *sock) {
 }
 
 z_result_t _z_socket_wait_readable(_z_socket_wait_iter_t *iter, uint32_t timeout_ms) {
-    fd_set read_fds;
-    int max_fd = 0;
-    bool has_sockets = false;
+    if (!_z_socket_wait_iter_reset(iter)) {
+        return _Z_NO_DATA;
+    }
 
-    FD_ZERO(&read_fds);
-
+    // The number of readers per session is bounded by Z_MAX_NUM_SOCKET_READERS, so a fixed-size
+    // stack array can be used instead of a heap allocation.
+    struct pollfd fds[Z_MAX_NUM_SOCKET_READERS];
+    size_t nfds = 0;
     _z_socket_wait_iter_reset(iter);
-    while (_z_socket_wait_iter_next(iter)) {
+    do {
         const _z_sys_net_socket_t *sock = _z_socket_wait_iter_get_socket(iter);
         _z_socket_wait_iter_set_ready(iter, false);
-        FD_SET(sock->_fd, &read_fds);
-        if (sock->_fd > max_fd) {
-            max_fd = sock->_fd;
-        }
-        has_sockets = true;
-    }
+        fds[nfds].fd = sock->_fd;
+        fds[nfds].events = POLLIN;
+        fds[nfds].revents = 0;
+        nfds++;
+    } while (_z_socket_wait_iter_next(iter));
 
-    if (!has_sockets) {
-        return _Z_RES_OK;
-    }
-
-    struct timeval timeout = {
-        .tv_sec = (time_t)(timeout_ms / 1000U),
-        .tv_usec = (suseconds_t)((timeout_ms % 1000U) * 1000U),
-    };
-    int result = select(max_fd + 1, &read_fds, NULL, NULL, &timeout);
+    int result = poll(fds, (nfds_t)nfds, (int)timeout_ms);
     if (result < 0) {
         _Z_DEBUG("Errno: %d\n", errno);
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     }
 
+    // Map readiness back onto the iterator. POLLHUP/POLLERR are treated as ready so the read path
+    // can observe peer closures/errors via a subsequent recv.
     bool has_data = false;
+    size_t i = 0;
     _z_socket_wait_iter_reset(iter);
-    while (_z_socket_wait_iter_next(iter)) {
-        const _z_sys_net_socket_t *sock = _z_socket_wait_iter_get_socket(iter);
-        bool is_ready = FD_ISSET(sock->_fd, &read_fds);
+    do {
+        bool is_ready = (fds[i].revents & (POLLIN | POLLHUP | POLLERR)) != 0;
         _z_socket_wait_iter_set_ready(iter, is_ready);
         has_data |= is_ready;
-    }
+        i++;
+    } while (_z_socket_wait_iter_next(iter));
 
-    return has_data ? _Z_RES_OK : _Z_NO_DATA_PROCESSED;
+    return has_data ? _Z_RES_OK : _Z_NO_DATA;
 }
 
 #if Z_FEATURE_LINK_BLUETOOTH == 1

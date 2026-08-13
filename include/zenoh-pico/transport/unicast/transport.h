@@ -15,23 +15,135 @@
 #ifndef ZENOH_PICO_UNICAST_TRANSPORT_H
 #define ZENOH_PICO_UNICAST_TRANSPORT_H
 
-#include "zenoh-pico/api/types.h"
+#include "zenoh-pico/config.h"
+#include "zenoh-pico/transport/unicast/listener.h"
+#include "zenoh-pico/transport/unicast/peer.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-z_result_t _z_unicast_transport_create(_z_transport_t *zt, _z_link_t *zl,
-                                       _z_transport_unicast_establish_param_t *param);
-z_result_t _z_unicast_handshake_listen(_z_transport_unicast_establish_param_t *param, const _z_link_t *zl,
-                                       const _z_id_t *local_zid, z_whatami_t mode, _z_sys_net_socket_t *socket);
-z_result_t _z_unicast_open_client(_z_transport_unicast_establish_param_t *param, const _z_link_t *zl,
-                                  const _z_id_t *local_zid);
-z_result_t _z_unicast_open_peer(_z_transport_unicast_establish_param_t *param, const _z_link_t *zl,
-                                const _z_id_t *local_zid, int peer_op, _z_sys_net_socket_t *socket);
-z_result_t _z_unicast_send_close(_z_transport_unicast_t *ztu, uint8_t reason, bool link_only);
-z_result_t _z_unicast_transport_close(_z_transport_unicast_t *ztu, uint8_t reason);
-void _z_unicast_transport_clear(_z_transport_unicast_t *ztu);
+#if Z_FEATURE_UNICAST_TRANSPORT == 1
+
+// storing peers in a hashset, since we do not have any particular key to fetch them,
+// in the future we may want to use a hashmap with address as a key to support demuxing
+#define _ZP_STATIC_HASHSET_TEMPLATE_KEY_TYPE _z_unicast_transport_peer_t
+#define _ZP_STATIC_HASHSET_TEMPLATE_KEY_HASH_FN(x) _z_id_hash(&(x)->_remote_zid)
+#define _ZP_STATIC_HASHSET_TEMPLATE_KEY_EQ_FN(x, y) _z_id_eq(&(x)->_remote_zid, &(y)->_remote_zid)
+#define _ZP_STATIC_HASHSET_TEMPLATE_NAME _z_unicast_transport_peer_hset
+#define _ZP_STATIC_HASHSET_TEMPLATE_CAPACITY Z_MAX_NUM_UNICAST_PEERS
+#define _ZP_STATIC_HASHSET_TEMPLATE_KEY_DESTROY_FN _z_unicast_transport_peer_clear
+// default move
+#include "zenoh-pico/collections/static_hashset_template.h"
+
+#if Z_FEATURE_UNICAST_PEER == 1
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE _z_unicast_transport_listener_t
+#define _ZP_STATIC_VECTOR_TEMPLATE_NAME _z_unicast_transport_listener_vec
+#define _ZP_STATIC_VECTOR_TEMPLATE_SIZE Z_MAX_NUM_UNICAST_LISTENERS
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_DESTROY_FN _z_unicast_transport_listener_clear
+
+// default move
+#include "zenoh-pico/collections/static_vector_template.h"
+#endif
+
+static inline int _z_unicast_transport_peer_lease_cmp(const _z_unicast_transport_peer_hset_iter_t *a,
+                                                      const _z_unicast_transport_peer_hset_iter_t *b,
+                                                      const _z_unicast_transport_peer_hset_t *ctx) {
+    return zp_clock_compare(&_z_unicast_transport_peer_hset_const_at(ctx, *a)->_lease_deadline,
+                            &_z_unicast_transport_peer_hset_const_at(ctx, *b)->_lease_deadline);
+}
+
+#define _ZP_STATIC_PQUEUE_TEMPLATE_ELEM_TYPE _z_unicast_transport_peer_hset_iter_t
+#define _ZP_STATIC_PQUEUE_TEMPLATE_NAME _z_unicast_lease_pqueue
+#define _ZP_STATIC_PQUEUE_TEMPLATE_SIZE Z_MAX_NUM_UNICAST_PEERS
+#define _ZP_STATIC_PQUEUE_TEMPLATE_CMP_CTX_TYPE const _z_unicast_transport_peer_hset_t
+#define _ZP_STATIC_PQUEUE_TEMPLATE_ELEM_CMP_FN _z_unicast_transport_peer_lease_cmp
+#include "zenoh-pico/collections/static_pqueue_template.h"
+
+typedef struct _z_transport_manager_t _z_transport_manager_t;
+
+#if Z_FEATURE_UNICAST_PEER == 1
+typedef struct _z_listen_data_t {
+    size_t current_peer;
+} _z_listen_data_t;
+
+static inline void _z_listen_data_init(_z_listen_data_t *data) { data->current_peer = 0; }
+#endif
+typedef struct _z_unicast_transport_manager_t {
+#if Z_FEATURE_UNICAST_PEER == 1
+    _z_unicast_transport_listener_vec_t _listeners;
+#endif
+    _z_transport_manager_t *_parent;  // non-owning pointer to the global transport manager
+    _z_unicast_transport_peer_hset_t _peers;
+    _z_unicast_lease_pqueue_t _lease_pqueue;
+    _z_zbuf_t _rx_buffer;  // a common buffer used for incoming messages on datagram links, to be shared among all peers
+#if Z_FEATURE_UNICAST_PEER == 1
+    _z_fut_handle_t _listen_task;
+    _z_listen_data_t _listen_data;
+#endif
+} _z_unicast_transport_manager_t;
+
+typedef struct {
+    _z_id_t _remote_zid;
+    uint16_t _batch_size;
+    _z_zint_t _initial_sn_rx;
+    _z_zint_t _initial_sn_tx;
+    _z_zint_t _lease;
+    z_whatami_t _remote_whatami;
+    uint8_t _key_id_res;
+    uint8_t _req_id_res;
+    uint8_t _seq_num_res;
+    bool _is_qos;
+#if Z_FEATURE_FRAGMENTATION == 1
+    uint8_t _patch;
+#endif
+} _z_transport_unicast_establish_param_t;
+
+z_result_t _z_unicast_transport_manager_create(_z_unicast_transport_manager_t *manager, _z_transport_manager_t *parent);
+z_result_t _z_unicast_transport_manager_spawn_tasks(_z_unicast_transport_manager_t *manager);
+
+// Does not take ownership of the link in case of failure.
+// rx_leftover (optional, may be NULL) carries bytes read together with the handshake response that must seed the
+// peer rx buffer; add_peer copies them into the peer rx buffer and leaves ownership of rx_leftover to the caller.
+z_result_t _z_unicast_transport_manager_add_peer(_z_unicast_transport_manager_t *manager,
+                                                 _z_transport_unicast_establish_param_t *param, _z_unicast_link_t *link,
+                                                 _z_connect_peer_id_t locator_id, _z_zbuf_t *opt_rx_leftover);
+
+void _z_unicast_transport_manager_close(_z_unicast_transport_manager_t *manager);
+void _z_unicast_transport_manager_clear(_z_unicast_transport_manager_t *manager);
+z_result_t _z_unicast_transport_manager_close_peer(_z_unicast_transport_manager_t *manager,
+                                                   _z_unicast_transport_peer_hset_iter_t peer_id,
+                                                   const _z_close_reason_t *opt_reason,
+                                                   _z_unicast_transport_peer_hset_iter_t *opt_next_peer_id);
+
+z_result_t _z_unicast_handshake_listen(_z_transport_unicast_establish_param_t *param, _z_unicast_link_t *link,
+                                       const _z_id_t *local_zid, z_whatami_t mode);
+
+// link is not consumed upon failure
+z_result_t _z_unicast_transport_manager_connect_peer(_z_unicast_transport_manager_t *manager, _z_unicast_link_t *link,
+                                                     _z_connect_peer_id_t locator_id);
+#if Z_FEATURE_UNICAST_PEER == 1
+// listener is not consumed upon failure
+z_result_t _z_unicast_transport_manager_add_listener(_z_unicast_transport_manager_t *manager,
+                                                     _z_unicast_listener_t *listener,
+                                                     _z_listen_listener_id_t locator_id);
+#endif
+
+static inline size_t _z_unicast_transport_manager_get_peers_count(const _z_unicast_transport_manager_t *manager) {
+    return _z_unicast_transport_peer_hset_size(&manager->_peers);
+}
+
+static inline size_t _z_unicast_transport_manager_get_readers_count(const _z_unicast_transport_manager_t *manager) {
+    return _z_unicast_transport_manager_get_peers_count(manager);
+}
+
+// Returns the next lease deadline if there are any remaining peers, or NULL if there are no peers.
+const z_clock_t *_z_unicast_transport_manager_check_lease(_z_unicast_transport_manager_t *manager);
+
+#if Z_FEATURE_UNICAST_PEER == 1
+_z_fut_fn_result_t _zp_unicast_transport_listen_task_fn(void *unicast_transport_manager, _z_executor_t *executor);
+#endif
+#endif
 
 #ifdef __cplusplus
 }

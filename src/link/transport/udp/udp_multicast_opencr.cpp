@@ -12,8 +12,6 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
-#include "zenoh-pico/system/platform.h"
-
 #if defined(ZP_PLATFORM_SOCKET_OPENCR) && (Z_FEATURE_LINK_UDP_MULTICAST == 1)
 
 #include <Arduino.h>
@@ -36,6 +34,9 @@ z_result_t _z_open_udp_multicast(_z_sys_net_socket_t *sock, const _z_sys_net_end
     (void)(iface);
 
     sock->_udp = new WiFiUDP();
+    if (sock->_udp == NULL) {
+        return _Z_ERR_GENERIC;
+    }
     if (!sock->_udp->begin(55555)) {
         _Z_ERROR_LOG(_Z_ERR_GENERIC);
         ret = _Z_ERR_GENERIC;
@@ -93,7 +94,7 @@ void _z_close_udp_multicast(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *
 }
 
 size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *addr) {
+                             _z_link_address_t *addr_out) {
     _ZP_UNUSED(lep);
     ssize_t rb = 0;
     do {
@@ -103,46 +104,21 @@ size_t _z_read_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_
     if (rb <= (ssize_t)len) {
         // flawfinder: ignore
         if (sock._udp->read(ptr, rb) == rb) {
-            if (addr != NULL) {
-                IPAddress rip = sock._udp->remoteIP();
-                uint16_t rport = sock._udp->remotePort();
-                addr->len = 4U + sizeof(uint16_t);
-
-                uint8_t *dst = const_cast<uint8_t *>(addr->start);
-                dst[0] = rip[0];
-                dst[1] = rip[1];
-                dst[2] = rip[2];
-                dst[3] = rip[3];
-
-                const uint8_t *port_bytes = (const uint8_t *)&rport;
-                dst[4] = port_bytes[0];
-                dst[5] = port_bytes[1];
-            }
+            IPAddress rip = sock._udp->remoteIP();
+            uint16_t rport = sock._udp->remotePort();
+            _z_link_address_push_back(addr_out, rip[0]);
+            _z_link_address_push_back(addr_out, rip[1]);
+            _z_link_address_push_back(addr_out, rip[2]);
+            _z_link_address_push_back(addr_out, rip[3]);
+            const uint8_t *port_bytes = (const uint8_t *)&rport;
+            _z_link_address_push_back(addr_out, port_bytes[0]);
+            _z_link_address_push_back(addr_out, port_bytes[1]);
         } else {
             rb = 0;
         }
     }
 
     return rb;
-}
-
-size_t _z_read_exact_udp_multicast(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *addr) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_read_udp_multicast(sock, pos, len - n, lep, addr);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
 }
 
 size_t _z_send_udp_multicast(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
@@ -175,14 +151,9 @@ void _z_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *
     _z_close_udp_multicast(sockrecv, socksend, rep, lep);
 }
 
-size_t _z_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *ep) {
-    return _z_read_exact_udp_multicast(sock, ptr, len, lep, ep);
-}
-
 size_t _z_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *ep) {
-    return _z_read_udp_multicast(sock, ptr, len, lep, ep);
+                             _z_link_address_t *ep_out) {
+    return _z_read_udp_multicast(sock, ptr, len, lep, ep_out);
 }
 
 size_t _z_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,

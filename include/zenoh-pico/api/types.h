@@ -615,6 +615,7 @@ typedef struct _z_info_link_t {
     z_id_t _zid;
     _z_string_t _src;
     _z_string_t _dst;
+    _z_string_t _mcast_group;
     uint16_t _mtu;
     bool _is_streamed;
     bool _is_reliable;

@@ -32,8 +32,8 @@ typedef struct {
 
 static void setup_session(timestamp_test_fixture_t *fixture) {
     *fixture = (timestamp_test_fixture_t){0};
-    _z_session_generate_zid(&fixture->zid, Z_ZID_LENGTH);
-    assert(_z_session_init(&fixture->session, &fixture->zid) == _Z_RES_OK);
+    fixture->zid = _z_id_generate_random();
+    assert(_z_session_init(&fixture->session, &fixture->zid, Z_WHATAMI_CLIENT) == _Z_RES_OK);
     if (_Z_RC_IS_NULL(&fixture->session_rc)) {
         fixture->session_rc = _z_session_rc_new(&fixture->session);
         assert(!_Z_RC_IS_NULL(&fixture->session_rc));

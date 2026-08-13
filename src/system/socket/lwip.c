@@ -51,11 +51,12 @@ void _z_socket_close(_z_sys_net_socket_t *sock) {
 z_result_t _z_socket_wait_readable(_z_socket_wait_iter_t *iter, uint32_t timeout_ms) {
     fd_set read_fds;
     int max_fd = 0;
-    bool has_sockets = false;
+    if (!_z_socket_wait_iter_reset(iter)) {
+        return _Z_NO_DATA;
+    }
 
     FD_ZERO(&read_fds);
-    _z_socket_wait_iter_reset(iter);
-    while (_z_socket_wait_iter_next(iter)) {
+    do {
         const _z_sys_net_socket_t *sock = _z_socket_wait_iter_get_socket(iter);
         int fd = _z_lwip_socket_get(*sock);
         _z_socket_wait_iter_set_ready(iter, false);
@@ -63,12 +64,7 @@ z_result_t _z_socket_wait_readable(_z_socket_wait_iter_t *iter, uint32_t timeout
         if (fd > max_fd) {
             max_fd = fd;
         }
-        has_sockets = true;
-    }
-
-    if (!has_sockets) {
-        return _Z_RES_OK;
-    }
+    } while (_z_socket_wait_iter_next(iter));
 
     struct timeval timeout = {
         .tv_sec = (time_t)(timeout_ms / 1000U),
@@ -78,19 +74,19 @@ z_result_t _z_socket_wait_readable(_z_socket_wait_iter_t *iter, uint32_t timeout
     if (res < 0) {
         _Z_ERROR_RETURN(_Z_ERR_GENERIC);
     } else if (res == 0) {
-        return _Z_NO_DATA_PROCESSED;
+        return _Z_NO_DATA;
     }
 
     bool has_data = false;
     _z_socket_wait_iter_reset(iter);
-    while (_z_socket_wait_iter_next(iter)) {
+    do {
         const _z_sys_net_socket_t *sock = _z_socket_wait_iter_get_socket(iter);
         bool is_ready = FD_ISSET(_z_lwip_socket_get(*sock), &read_fds);
         _z_socket_wait_iter_set_ready(iter, is_ready);
         has_data |= is_ready;
-    }
+    } while (_z_socket_wait_iter_next(iter));
 
-    return has_data ? _Z_RES_OK : _Z_NO_DATA_PROCESSED;
+    return has_data ? _Z_RES_OK : _Z_NO_DATA;
 }
 
 #else

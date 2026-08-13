@@ -102,24 +102,6 @@ size_t _z_read_bt(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
     return i;
 }
 
-size_t _z_read_exact_bt(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_read_bt(sock, pos, len - n);
-        if (rb == SIZE_MAX) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
-}
-
 size_t _z_send_bt(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     sock._bts->write(ptr, len);
     return len;

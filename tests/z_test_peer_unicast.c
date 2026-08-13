@@ -20,8 +20,7 @@
 #include "zenoh-pico.h"
 
 #if Z_FEATURE_SUBSCRIPTION == 1 && Z_FEATURE_PUBLICATION == 1 && Z_FEATURE_QUERY == 1 && Z_FEATURE_QUERYABLE == 1 && \
-    Z_FEATURE_MULTI_THREAD == 1 && Z_FEATURE_LOCAL_SUBSCRIBER == 0 && Z_FEATURE_UNICAST_PEER == 1 &&                 \
-    defined Z_FEATURE_UNSTABLE_API
+    Z_FEATURE_MULTI_THREAD == 1 && Z_FEATURE_UNICAST_PEER == 1
 typedef struct _node_ctx {
     z_owned_config_t config;
     const char *keyexpr_out;
@@ -88,7 +87,12 @@ void *node_task(void *ptr) {
     printf("Declaring Subscriber on '%s'...\n", keyexpr_in);
     z_owned_closure_sample_t sub_cb;
     z_closure(&sub_cb, pub_handler, NULL, ctx);
-    if (z_declare_background_subscriber(z_loan(s), z_loan(sub_qybl_ke), z_move(sub_cb), NULL) != Z_OK) {
+    z_subscriber_options_t sub_opts;
+    z_subscriber_options_default(&sub_opts);
+#if Z_FEATURE_LOCAL_SUBSCRIBER == 1
+    sub_opts.allowed_origin = Z_LOCALITY_REMOTE;
+#endif
+    if (z_declare_background_subscriber(z_loan(s), z_loan(sub_qybl_ke), z_move(sub_cb), &sub_opts) != Z_OK) {
         printf("Unable to declare subscriber.\n");
         return NULL;
     }
@@ -96,7 +100,12 @@ void *node_task(void *ptr) {
     printf("Creating Queryable on '%s'...\n", keyexpr_in);
     z_owned_closure_query_t qybl_cb;
     z_closure(&qybl_cb, query_handler, NULL, ctx);
-    if (z_declare_background_queryable(z_loan(s), z_loan(sub_qybl_ke), z_move(qybl_cb), NULL) != Z_OK) {
+    z_queryable_options_t qybl_opts;
+    z_queryable_options_default(&qybl_opts);
+#if Z_FEATURE_LOCAL_QUERYABLE == 1
+    qybl_opts.allowed_origin = Z_LOCALITY_REMOTE;
+#endif
+    if (z_declare_background_queryable(z_loan(s), z_loan(sub_qybl_ke), z_move(qybl_cb), &qybl_opts) != Z_OK) {
         printf("Unable to create queryable.\n");
         return NULL;
     }
@@ -224,7 +233,22 @@ static void test_packet_transmission(void) {
     _z_task_join(&task3);
 }
 
-static bool test_peer_connection(void) {
+static void z_id_closure_count_peers(const z_id_t *id, void *ctx) {
+    _ZP_UNUSED(id);
+    int *count = (int *)ctx;
+    (*count)++;
+}
+
+static int get_peers_count(const z_loaned_session_t *zs) {
+    int peer_count = 0;
+    z_owned_closure_zid_t id_closure;
+    z_closure(&id_closure, z_id_closure_count_peers, NULL, &peer_count);
+    z_info_peers_zid(zs, z_move(id_closure));
+    return peer_count;
+}
+
+static bool test_many_to_one_peer_connection(void) {
+    printf("Testing many-to-one peer connection...\n");
     // Init config
     z_owned_config_t config;
     z_config_default(&config);
@@ -236,46 +260,159 @@ static bool test_peer_connection(void) {
         printf("Unable to open main session!\n");
         return false;
     }
-    z_owned_session_t sess_array[Z_LISTEN_MAX_CONNECTION_NB + 1];
-    z_owned_config_t cfg_array[Z_LISTEN_MAX_CONNECTION_NB + 1];
+
+    z_owned_session_t sess_array[Z_MAX_NUM_UNICAST_PEERS];
+    z_owned_config_t cfg_array[Z_MAX_NUM_UNICAST_PEERS];
     // // Open max peers
-    for (int i = 0; i < Z_LISTEN_MAX_CONNECTION_NB; i++) {
+    for (int i = 0; i < Z_MAX_NUM_UNICAST_PEERS; i++) {
         z_config_default(&cfg_array[i]);
         zp_config_insert(z_loan_mut(cfg_array[i]), Z_CONFIG_MODE_KEY, "peer");
         zp_config_insert(z_loan_mut(cfg_array[i]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
+        cfg_array[i]._val._connect_exit_on_failure._parsed = true;
         if (z_open(&sess_array[i], z_move(cfg_array[i]), NULL) != Z_OK) {
             printf("Unable to open peer session!\n");
             return false;
         }
         z_sleep_ms(100);
-    }
-    // Fail to open a new one
-    z_config_default(&cfg_array[Z_LISTEN_MAX_CONNECTION_NB]);
-    zp_config_insert(z_loan_mut(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), Z_CONFIG_MODE_KEY, "peer");
-    zp_config_insert(z_loan_mut(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-    if (z_open(&sess_array[Z_LISTEN_MAX_CONNECTION_NB], z_move(cfg_array[Z_LISTEN_MAX_CONNECTION_NB]), NULL) == Z_OK) {
-        printf("Should not have been able to open this session\n");
-        return false;
+        int peer_count = get_peers_count(z_loan(sess_array[i]));
+        if (peer_count != 1) {
+            printf("Failed to maintain connection with main session, expected 1 peer, got %d\n", peer_count);
+            return false;
+        }
     }
     // Close first session
-    z_drop(z_move(sess_array[0]));
-    z_sleep_ms(100);
-    // Alternate opening and closing first session a few times
-    for (int i = 0; i < 5; i++) {
-        z_config_default(&cfg_array[0]);
-        zp_config_insert(z_loan_mut(cfg_array[0]), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(cfg_array[0]), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:7447");
-        if (z_open(&sess_array[0], z_move(cfg_array[0]), NULL) != Z_OK) {
+    z_drop(z_move(s));
+    z_sleep_ms(500);
+    // Attempt to reopen listen session to exercise peer reconnection logic
+    z_config_default(&config);
+    zp_config_insert(z_loan_mut(config), Z_CONFIG_MODE_KEY, "peer");
+    zp_config_insert(z_loan_mut(config), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:7447");
+    if (z_open(&s, z_move(config), NULL) != Z_OK) {
+        printf("Unable to open peer session!\n");
+        return false;
+    }
+    z_sleep_ms(Z_MAX_NUM_UNICAST_PEERS * 2000);
+    int peer_count = get_peers_count(z_loan(s));
+    if (peer_count != Z_MAX_NUM_UNICAST_PEERS) {
+        printf("Unable to reestablish connection on listen session with all the peers, expected %d peers, got %d\n",
+               Z_MAX_NUM_UNICAST_PEERS, peer_count);
+        return false;
+    }
+    z_drop(z_move(s));
+    for (size_t i = 0; i < _ZP_ARRAY_SIZE(sess_array); i++) {
+        z_drop(z_move(sess_array[i]));
+    }
+    return true;
+}
+
+static bool test_full_mesh_peer_connection(size_t timeout_on_connct_ms) {
+    printf("Testing full mesh peer connection (connect timeout on session open: %zu ms)...\n", timeout_on_connct_ms);
+    z_clock_t test_start_time = z_clock_now();
+    char locators[Z_MAX_NUM_UNICAST_PEERS + 1][32] = {0};
+    size_t start_port = 10000;
+    for (size_t i = 0; i < Z_MAX_NUM_UNICAST_PEERS + 1; i++) {
+        sprintf(locators[i], "tcp/127.0.0.1:%zu", start_port + i);
+    }
+    z_owned_session_t sess_array[Z_MAX_NUM_UNICAST_PEERS + 1];
+    for (size_t i = 0; i < _ZP_ARRAY_SIZE(sess_array); i++) {
+        z_owned_config_t cfg;
+        z_config_default(&cfg);
+        zp_config_insert(z_loan_mut(cfg), Z_CONFIG_MODE_KEY, "peer");
+        zp_config_insert(z_loan_mut(cfg), Z_CONFIG_LISTEN_KEY, locators[i]);
+        cfg._val._connect_timeout._parsed = (uint32_t)timeout_on_connct_ms;
+
+        // Connect only to lower-index peers so each pair has a single connect direction. This avoids
+        // symmetric (mutual) connects and halves the number of connection attempts to N*(N+1)/2.
+        for (size_t j = 0; j < i; j++) {
+            zp_config_insert(z_loan_mut(cfg), Z_CONFIG_CONNECT_KEY, locators[j]);
+        }
+        if (z_open(&sess_array[i], z_move(cfg), NULL) != Z_OK) {
             printf("Unable to open peer session!\n");
             return false;
         }
-        z_sleep_ms(100);
-        z_drop(z_move(sess_array[0]));
-        z_sleep_ms(100);
+    }
+    z_clock_t start_time = z_clock_now();
+    int num_connections = 0;
+    const unsigned long max_duration_ms = Z_MAX_NUM_UNICAST_PEERS * 1000;
+    bool ret = false;
+    while (z_clock_elapsed_ms(&start_time) < max_duration_ms) {
+        num_connections = 0;
+        for (size_t i = 0; i < _ZP_ARRAY_SIZE(sess_array); i++) {
+            num_connections += get_peers_count(z_loan(sess_array[i]));
+        }
+        if (num_connections == Z_MAX_NUM_UNICAST_PEERS * _ZP_ARRAY_SIZE(sess_array)) {
+            ret = true;
+            break;
+        }
+        printf("Established %d/%d connections after %zu ms\n", num_connections,
+               (int)(Z_MAX_NUM_UNICAST_PEERS * _ZP_ARRAY_SIZE(sess_array)), (size_t)z_clock_elapsed_ms(&start_time));
+        z_sleep_ms(1000);
+    }
+    if (!ret) {
+        printf("Unable to establish full mesh connection with all the peers, expected %d connections, got %d\n",
+               (int)(Z_MAX_NUM_UNICAST_PEERS * _ZP_ARRAY_SIZE(sess_array)), num_connections);
+    } else {
+        printf("Successfully established full mesh connection with all %zu peers in %zu ms\n",
+               (size_t)_ZP_ARRAY_SIZE(sess_array), (size_t)z_clock_elapsed_ms(&test_start_time));
     }
     for (size_t i = 0; i < _ZP_ARRAY_SIZE(sess_array); i++) {
         z_drop(z_move(sess_array[i]));
     }
+    return ret;
+}
+
+static bool test_self_connection_rejection(void) {
+    printf("Testing self connection rejection...\n");
+    z_owned_config_t cfg;
+    z_config_default(&cfg);
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_MODE_KEY, "peer");
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:10100");
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:10100");
+    z_owned_session_t s;
+    if (z_open(&s, z_move(cfg), NULL) != Z_OK) {
+        printf("Unable to open peer session!\n");
+        return false;
+    }
+    z_sleep_ms(1000);
+    int peer_count = get_peers_count(z_loan(s));
+    if (peer_count != 0) {
+        printf("Self connection was not rejected, expected 0 peers, got %d\n", peer_count);
+        return false;
+    }
+    z_drop(z_move(s));
+    return true;
+}
+
+static bool test_duplicate_connection_rejection(void) {
+    printf("Testing duplicate connection rejection...\n");
+    z_owned_config_t cfg;
+    z_config_default(&cfg);
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_MODE_KEY, "peer");
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_LISTEN_KEY, "tcp/127.0.0.1:10200");
+    z_owned_session_t s;
+    if (z_open(&s, z_move(cfg), NULL) != Z_OK) {
+        printf("Unable to open peer session!\n");
+        return false;
+    }
+
+    z_config_default(&cfg);
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_MODE_KEY, "peer");
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:10200");
+    zp_config_insert(z_loan_mut(cfg), Z_CONFIG_CONNECT_KEY, "tcp/127.0.0.1:10200");
+
+    z_owned_session_t s2;
+    if (z_open(&s2, z_move(cfg), NULL) != Z_OK) {
+        printf("Unable to open peer session!\n");
+        return false;
+    }
+
+    z_sleep_ms(1000);
+    int peer_count = get_peers_count(z_loan(s));
+    if (peer_count != 1) {
+        printf("Duplicate connection was not rejected, expected 1 peer, got %d\n", peer_count);
+        return false;
+    }
+    z_drop(z_move(s2));
     z_drop(z_move(s));
     return true;
 }
@@ -284,11 +421,22 @@ int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
     test_packet_transmission();
-    printf("Test connections...");
-    if (!test_peer_connection()) {
+    if (!test_many_to_one_peer_connection()) {
         return -1;
     }
-    printf(" Ok\n");
+    if (!test_full_mesh_peer_connection(1)) {
+        return -1;
+    }
+    if (!test_full_mesh_peer_connection(5000)) {
+        return -1;
+    }
+    if (!test_self_connection_rejection()) {
+        return -1;
+    }
+    if (!test_duplicate_connection_rejection()) {
+        return -1;
+    }
+    printf("All tests passed\n");
     return 0;
 }
 
@@ -299,9 +447,7 @@ int main(int argc, char **argv) {
     (void)argv;
     printf(
         "Missing config token to build this test. This test requires: Z_FEATURE_SUBSCRIPTION, Z_FEATURE_PUBLICATION, "
-        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD, Z_FEATURE_UNICAST_PEER and "
-        "Z_FEATURE_UNSTABLE_API (until querier becomes stable)\n");
-    printf("It also requires Z_FEATURE_LOCAL_SUBSCRIBER to be deactivated\n");
+        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD, Z_FEATURE_UNICAST_PEER\n");
     return 0;
 }
 

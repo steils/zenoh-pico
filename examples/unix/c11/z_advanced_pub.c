@@ -101,6 +101,7 @@ int main(int argc, char **argv) {
 static int parse_args(int argc, char **argv, z_owned_config_t *config, char **keyexpr, char **value, size_t *history) {
     int opt;
     while ((opt = getopt(argc, argv, "k:v:e:m:l:i:")) != -1) {
+        z_result_t ret = Z_OK;
         switch (opt) {
             case 'k':
                 *keyexpr = optarg;
@@ -109,13 +110,13 @@ static int parse_args(int argc, char **argv, z_owned_config_t *config, char **ke
                 *value = optarg;
                 break;
             case 'e':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, optarg);
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_CONNECT_KEY, optarg);
                 break;
             case 'm':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_MODE_KEY, optarg);
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_MODE_KEY, optarg);
                 break;
             case 'l':
-                zp_config_insert(z_loan_mut(*config), Z_CONFIG_LISTEN_KEY, optarg);
+                ret = zp_config_insert(z_loan_mut(*config), Z_CONFIG_LISTEN_KEY, optarg);
                 break;
             case 'i': {
                 int tmp = atoi(optarg);
@@ -135,7 +136,11 @@ static int parse_args(int argc, char **argv, z_owned_config_t *config, char **ke
                 }
                 return 1;
             default:
-                return -1;
+                ret = _Z_ERR_INVALID;
+        }
+        if (ret != Z_OK) {
+            fprintf(stderr, "Failed to set config option for -%c: %d\n", opt, ret);
+            return 1;
         }
     }
     return 0;

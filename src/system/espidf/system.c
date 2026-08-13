@@ -245,6 +245,22 @@ z_clock_t z_clock_now(void) {
     return now;
 }
 
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (l->tv_sec < r->tv_sec) {
+        return -1;
+    } else if (l->tv_sec > r->tv_sec) {
+        return 1;
+    } else {
+        if (l->tv_nsec < r->tv_nsec) {
+            return -1;
+        } else if (l->tv_nsec > r->tv_nsec) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+}
+
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {
     long elapsed = (1000000 * (instant->tv_sec - epoch->tv_sec) + (instant->tv_nsec - epoch->tv_nsec) / 1000);
     return elapsed > 0 ? (unsigned long)elapsed : 0;

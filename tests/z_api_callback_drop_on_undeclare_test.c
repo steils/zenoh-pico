@@ -339,6 +339,11 @@ void put_str(const ze_loaned_advanced_publisher_t* pub, const char* str) {
     z_bytes_from_static_str(&payload, str);
     ze_advanced_publisher_put(pub, z_bytes_move(&payload), NULL);
 }
+// global variables to hold the URIs for the two sessions, so that they can be used in the proxy setup function, since
+// config requires strings to be static.
+char uri_connect[128];
+char uri_listen[128];
+
 void setup_two_peers_with_proxy(z_owned_session_t* s1, z_owned_session_t* s2, tcp_proxy_t** proxy,
                                 uint16_t upstream_listen_port) {
     *proxy = tcp_proxy_create("127.0.0.1", "127.0.0.1", upstream_listen_port);
@@ -351,17 +356,15 @@ void setup_two_peers_with_proxy(z_owned_session_t* s1, z_owned_session_t* s2, tc
     z_config_default(&c1);
     z_config_default(&c2);
 
-    char uri[128];
-
     // s1 listens on the fixed upstream port
     zp_config_insert(z_loan_mut(c1), Z_CONFIG_MODE_KEY, "peer");
-    snprintf(uri, sizeof(uri), "tcp/127.0.0.1:%u#iface=lo", (unsigned)upstream_listen_port);
-    zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, uri);
+    snprintf(uri_listen, sizeof(uri_listen), "tcp/127.0.0.1:%u#iface=lo", (unsigned)upstream_listen_port);
+    zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, uri_listen);
 
     // s2 connects via proxy ephemeral port
     zp_config_insert(z_loan_mut(c2), Z_CONFIG_MODE_KEY, "peer");
-    snprintf(uri, sizeof(uri), "tcp/127.0.0.1:%u#iface=lo", (unsigned)port);
-    zp_config_insert(z_loan_mut(c2), Z_CONFIG_CONNECT_KEY, uri);
+    snprintf(uri_connect, sizeof(uri_connect), "tcp/127.0.0.1:%u#iface=lo", (unsigned)port);
+    zp_config_insert(z_loan_mut(c2), Z_CONFIG_CONNECT_KEY, uri_connect);
 
     assert(z_open(s1, z_config_move(&c1), NULL) == Z_OK);
     assert(z_open(s2, z_config_move(&c2), NULL) == Z_OK);

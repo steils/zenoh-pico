@@ -210,10 +210,10 @@ z_result_t _z_serial_endpoint_valid(const _z_endpoint_t *endpoint) {
     return ret;
 }
 
-static z_result_t _z_serial_open_impl(_z_serial_socket_t *sock, const _z_endpoint_t *endpoint, bool connect) {
-    _z_serial_endpoint_cfg_t cfg;
+z_result_t _z_serial_protocol_open(_z_sys_net_socket_t *sock, const _z_endpoint_t *endpoint, bool connect) {
     z_result_t ret = _Z_RES_OK;
 
+    _z_serial_endpoint_cfg_t cfg;
     ret = _z_serial_endpoint_parse(&cfg, endpoint);
     if (ret != _Z_RES_OK) {
         _Z_ERROR_LOG(_Z_ERR_CONFIG_LOCATOR_INVALID);
@@ -221,36 +221,24 @@ static z_result_t _z_serial_open_impl(_z_serial_socket_t *sock, const _z_endpoin
     }
 
     if (cfg._from_pins) {
-        ret = connect ? _z_serial_open_from_pins(&sock->_sock, cfg._txpin, cfg._rxpin, cfg._baudrate)
-                      : _z_serial_listen_from_pins(&sock->_sock, cfg._txpin, cfg._rxpin, cfg._baudrate);
+        ret = connect ? _z_serial_open_from_pins(sock, cfg._txpin, cfg._rxpin, cfg._baudrate)
+                      : _z_serial_listen_from_pins(sock, cfg._txpin, cfg._rxpin, cfg._baudrate);
     } else {
-        ret = connect ? _z_serial_open_from_dev(&sock->_sock, cfg._dev, cfg._baudrate)
-                      : _z_serial_listen_from_dev(&sock->_sock, cfg._dev, cfg._baudrate);
-    }
-
-    if (ret != _Z_RES_OK || !connect) {
-        _z_serial_endpoint_cfg_clear(&cfg);
-        return ret;
-    }
-
-    ret = _z_connect_serial(sock->_sock);
-    if (ret != _Z_RES_OK) {
-        _z_serial_close(&sock->_sock);
+        ret = connect ? _z_serial_open_from_dev(sock, cfg._dev, cfg._baudrate)
+                      : _z_serial_listen_from_dev(sock, cfg._dev, cfg._baudrate);
     }
 
     _z_serial_endpoint_cfg_clear(&cfg);
-    return ret;
+
+    if (ret != _Z_RES_OK || !connect) {
+        return ret;
+    }
+
+    _Z_CLEAN_RETURN_IF_ERR(_z_connect_serial(*sock), _z_serial_close(sock));
+    return _Z_RES_OK;
 }
 
-z_result_t _z_serial_protocol_open(_z_serial_socket_t *sock, const _z_endpoint_t *endpoint) {
-    return _z_serial_open_impl(sock, endpoint, true);
-}
-
-z_result_t _z_serial_protocol_listen(_z_serial_socket_t *sock, const _z_endpoint_t *endpoint) {
-    return _z_serial_open_impl(sock, endpoint, false);
-}
-
-void _z_serial_protocol_close(_z_serial_socket_t *sock) { _z_serial_close(&sock->_sock); }
+void _z_serial_protocol_close(_z_sys_net_socket_t *sock) { _z_serial_close(sock); }
 
 z_result_t _z_connect_serial(const _z_sys_net_socket_t sock) {
     while (true) {
@@ -288,19 +276,4 @@ size_t _z_send_serial(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t
     return _z_send_serial_internal(sock, 0, ptr, len);
 }
 
-size_t _z_read_exact_serial(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-
-    do {
-        size_t rb = _z_read_serial(sock, ptr, len - n);
-        if (rb == SIZE_MAX) {
-            n = rb;
-            break;
-        }
-
-        n += rb;
-    } while (n != len);
-
-    return n;
-}
 #endif /* Z_FEATURE_LINK_SERIAL == 1 */

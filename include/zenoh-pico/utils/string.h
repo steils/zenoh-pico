@@ -80,7 +80,10 @@ static inline void _z_str_append(char *str, const char c) {
  * Convert a non null terminated `_z_str_se_t` to a uint32_t.
  */
 bool _z_str_se_atoui(const _z_str_se_t *str, uint32_t *result);
-
+/*
+ * Parse a null-terminated base-10 string as an unsigned 32-bit integer.
+ */
+bool _z_str_parse_u32(const char *s, uint32_t *out);
 /*
  * Parse a null-terminated base-10 string as a signed 32-bit integer.
  */

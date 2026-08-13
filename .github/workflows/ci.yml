@@ -193,7 +193,7 @@ jobs:
       - name: Build raweth
         run: |
           sudo apt install -y ninja-build
-          Z_FEATURE_RAWETH_TRANSPORT=1 CMAKE_GENERATOR=Ninja make
+          Z_FEATURE_RAWETH_TRANSPORT=1 Z_FEATURE_MULTICAST_TRANSPORT=1 CMAKE_GENERATOR=Ninja make
 
   tls_build:
     name: Build TLS transport on ubuntu-runner-set
@@ -814,9 +814,6 @@ jobs:
   multicast_peer_test:
     name: P2p multicast test
     runs-on: ubuntu-runner-set
-    strategy:
-      matrix:
-        feature_declarations: [1, 0]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -830,7 +827,6 @@ jobs:
           ./build/tests/z_test_peer_multicast
         env:
           Z_FEATURE_UNSTABLE_API: 1
-          Z_FEATURE_MULTICAST_DECLARATIONS: ${{ matrix.feature_declarations }}
         timeout-minutes: 15
 
   markdown_lint:

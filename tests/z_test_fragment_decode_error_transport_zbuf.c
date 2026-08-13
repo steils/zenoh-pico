@@ -20,7 +20,7 @@
 #include "utils/assert_helpers.h"
 #include "zenoh-pico.h"
 #include "zenoh-pico/protocol/codec/transport.h"
-#include "zenoh-pico/transport/common/tx.h"
+#include "zenoh-pico/transport/tx.h"
 
 #if Z_FEATURE_SUBSCRIPTION == 1 && Z_FEATURE_PUBLICATION == 1 && Z_FEATURE_FRAGMENTATION == 1 && \
     Z_FEATURE_MULTI_THREAD == 0
@@ -110,7 +110,8 @@ int main(int argc, char **argv) {
 
     const char *keyexpr = "test/zenoh-pico-single-thread-fragment";
     uint8_t *value = NULL;
-    size_t size = 3000;
+    size_t size =
+        Z_BATCH_MULTICAST_SIZE + 1024;  // Use the maximum multicast batch size + 1 KB to ensure fragmentation occurs
 
     value = z_malloc(size);
     ASSERT_NOT_NULL(value);
@@ -141,6 +142,11 @@ int main(int argc, char **argv) {
 
     z_owned_publisher_t pub;
     ASSERT_OK(z_declare_publisher(z_loan(s2), &pub, z_loan(ke), NULL));
+    // spin both sessions to ensure they are connected before sending the first sample
+    for (size_t i = 0; i < 10; i++) {
+        zp_spin_once(z_loan(s1));
+        zp_spin_once(z_loan(s2));
+    }
 
     z_sleep_s(1);
 
@@ -150,12 +156,13 @@ int main(int argc, char **argv) {
     z_sleep_s(1);
 
     _z_session_t *session = _Z_RC_IN_VAL(z_loan(s1));
-    _z_zbuf_t *zbuf = &session->_tp._transport._multicast._common._zbuf;
+    _z_zbuf_t *zbuf =
+        &_z_multicast_transport_group_vec_at(&session->_transport_manager._multicast._groups, 0)->_rx_buffer;
 
     dump_zbuf_state("[initial zbuf]", zbuf);
 
     z_result_t res = read_until_sample(z_loan(s1), z_loan(handler), zbuf, MAX_READS);
-    ASSERT_OK(res);
+    ASSERT_ERR(res, Z_OK);
     dump_zbuf_state("[zbuf after sample]", zbuf);
     ASSERT_EQ_U32(_z_zbuf_get_rpos(zbuf), _z_zbuf_get_wpos(zbuf));
 
@@ -167,8 +174,21 @@ int main(int argc, char **argv) {
     z_sleep_s(1);
 
     res = read_until_sample(z_loan(s1), z_loan(handler), zbuf, MAX_READS);
-    ASSERT_ERR(res, _Z_ERR_MESSAGE_TRANSPORT_UNKNOWN);
+    ASSERT_ERR(res, Z_CHANNEL_NODATA);  // corrupted message is not delivered
     dump_zbuf_state("[zbuf after bad sample]", zbuf);
+
+    _z_transport_set_message_encode_override(NULL);
+    z_sleep_s(3);
+    for (size_t i = 0; i < 10;
+         i++) {  // allow peers to reconnect if they were disconnected due to the corrupted message
+        zp_spin_once(z_loan(s1));
+        zp_spin_once(z_loan(s2));
+    }
+    printf("[tx]: Sending valid packet after corrupted one, on %s, len: %d\n", keyexpr, (int)size);
+    ASSERT_OK(publish_buf(z_loan(pub), value, size));
+    res = read_until_sample(z_loan(s1), z_loan(handler), zbuf, MAX_READS);
+    ASSERT_ERR(res, Z_OK);  // a new message is properly delivered after the corrupted one
+    dump_zbuf_state("[zbuf after sample]", zbuf);
     ASSERT_EQ_U32(_z_zbuf_get_rpos(zbuf), _z_zbuf_get_wpos(zbuf));
 
     z_drop(z_move(sub));

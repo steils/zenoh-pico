@@ -35,19 +35,20 @@ z_reliability_t _z_t_msg_get_reliability(_z_transport_message_t *msg) {
 }
 
 /*------------------ Join Message ------------------*/
-_z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, _z_id_t zid,
-                                          _z_conduit_sn_list_t next_sn) {
+_z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, _z_id_t zid, _z_sn_t next_sn,
+                                          uint16_t batch_size) {
     _z_transport_message_t msg;
     msg._header = _Z_MID_T_JOIN;
-
+    msg._body._join._is_qos = false;  // zenoh-pico does not support QoS
     msg._body._join._version = Z_PROTO_VERSION;
     msg._body._join._whatami = whatami;
     msg._body._join._lease = lease;
     msg._body._join._seq_num_res = Z_SN_RESOLUTION;
     msg._body._join._req_id_res = Z_REQ_RESOLUTION;
-    msg._body._join._batch_size = Z_BATCH_MULTICAST_SIZE;
+    msg._body._join._batch_size = batch_size;
     msg._body._join._next_sn = next_sn;
     msg._body._join._zid = zid;
+    msg._body._join._is_qos = false;
 #if Z_FEATURE_FRAGMENTATION == 1
     msg._body._join._patch = _Z_CURRENT_PATCH;
 #endif
@@ -56,8 +57,9 @@ _z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, 
         _Z_SET_FLAG(msg._header, _Z_FLAG_T_JOIN_T);
     }
 
-    if ((Z_BATCH_MULTICAST_SIZE != _Z_DEFAULT_MULTICAST_BATCH_SIZE) ||
-        (Z_SN_RESOLUTION != _Z_DEFAULT_RESOLUTION_SIZE) || (Z_REQ_RESOLUTION != _Z_DEFAULT_RESOLUTION_SIZE)) {
+    if ((msg._body._join._batch_size != _Z_DEFAULT_MULTICAST_BATCH_SIZE) ||
+        (msg._body._join._seq_num_res != _Z_DEFAULT_RESOLUTION_SIZE) ||
+        (msg._body._join._req_id_res != _Z_DEFAULT_RESOLUTION_SIZE)) {
         _Z_SET_FLAG(msg._header, _Z_FLAG_T_JOIN_S);
     }
 
@@ -66,7 +68,7 @@ _z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, 
 #else
     bool has_patch = false;
 #endif
-    if (next_sn._is_qos || has_patch) {
+    if (has_patch) {
         _Z_SET_FLAG(msg._header, _Z_FLAG_T_Z);
     }
 
@@ -74,7 +76,7 @@ _z_transport_message_t _z_t_msg_make_join(z_whatami_t whatami, _z_zint_t lease, 
 }
 
 /*------------------ Init Message ------------------*/
-_z_transport_message_t _z_t_msg_make_init_syn(z_whatami_t whatami, _z_id_t zid) {
+_z_transport_message_t _z_t_msg_make_init_syn(z_whatami_t whatami, _z_id_t zid, uint16_t batch_size) {
     _z_transport_message_t msg;
     msg._header = _Z_MID_T_INIT;
 
@@ -83,7 +85,7 @@ _z_transport_message_t _z_t_msg_make_init_syn(z_whatami_t whatami, _z_id_t zid) 
     msg._body._init._zid = zid;
     msg._body._init._seq_num_res = Z_SN_RESOLUTION;
     msg._body._init._req_id_res = Z_REQ_RESOLUTION;
-    msg._body._init._batch_size = Z_BATCH_UNICAST_SIZE;
+    msg._body._init._batch_size = batch_size;
     msg._body._init._cookie = _z_slice_view_null();
 #if Z_FEATURE_FRAGMENTATION == 1
     msg._body._init._patch = _Z_CURRENT_PATCH;
@@ -167,11 +169,11 @@ _z_transport_message_t _z_t_msg_make_open_ack(_z_zint_t lease, _z_zint_t initial
 }
 
 /*------------------ Close Message ------------------*/
-_z_transport_message_t _z_t_msg_make_close(uint8_t reason, bool link_only) {
+_z_transport_message_t _z_t_msg_make_close(_z_close_reason_t reason, bool link_only) {
     _z_transport_message_t msg;
     msg._header = _Z_MID_T_CLOSE;
 
-    msg._body._close._reason = reason;
+    msg._body._close._reason = (uint8_t)reason;
     if (link_only == false) {
         _Z_SET_FLAG(msg._header, _Z_FLAG_T_CLOSE_S);
     }

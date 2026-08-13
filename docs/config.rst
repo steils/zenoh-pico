@@ -55,29 +55,22 @@ Defines one or multiple endpoints a node will connect to.
 
 * `0`: no retry, try each locator once.
 * `>0`: retry retryable connect failures until the timeout expires.
-* `-1`: retry indefinitely.
 
 The default connect timeout is `0`.
 
 `Z_CONFIG_CONNECT_EXIT_ON_FAILURE_KEY` accepts `true` or `false`.
-Its default value is `true` in client mode and `false` in peer mode.
+Its default value is `false`.
 
 In client mode, configured connect locators are alternatives.
 Zenoh-Pico tries them until one succeeds or the configured timeout expires.
 Client mode always requires at least one connect locator to succeed before `z_open` returns successfully.
-Setting `Z_CONFIG_CONNECT_EXIT_ON_FAILURE_KEY` to `false` does not allow a client session to open without a transport.
 
-In peer mode, `z_open` also requires a primary transport before returning successfully.
-The primary transport is established either by opening the configured listen locator or by connecting to one configured connect locator.
-Once the primary transport is open, remaining connect locators are added as peers.
+In peer mode, `z_open` does not require to establish a transport before returning successfully.
 `Z_CONFIG_CONNECT_EXIT_ON_FAILURE_KEY` controls whether failures while connecting configured peer locators are tolerated.
 If it is `true`, non-retryable connect errors fail immediately.
 Retryable connect errors are retried according to `Z_CONFIG_CONNECT_TIMEOUT_KEY`; if the timeout expires before the
 required connectivity is established, `z_open` fails.
-If it is `false`, peer connections that are still failing may continue retrying from the transport task until the
-configured connect timeout expires.
-With `Z_FEATURE_MULTI_THREAD` enabled this task runs in the background; otherwise it progresses when the application
-spins the session tasks.
+If it is `false`, peer connections that are failed to establish will continue in the background.
 
 Listen
 ------
@@ -85,35 +78,20 @@ Listen
 Defines a single endpoint a node will listen on.
 
 * `Z_CONFIG_LISTEN_KEY`: The index of the option in the config table.
-* `Z_CONFIG_LISTEN_TIMEOUT_KEY`: Timeout, in milliseconds, dedicated to opening the configured listen locator.
-* `Z_CONFIG_LISTEN_TIMEOUT_DEFAULT`: The default timeout value for the configured listen locator.
 * `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY`: Whether `z_open` should fail when the configured listen locator cannot be
   opened.
 * `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_DEFAULT`: The default exit-on-failure value for the configured listen locator.
 
-.. warning:: `Z_CONFIG_LISTEN_TIMEOUT_KEY` and `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` are currently unstable, are only
+.. warning:: `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` is currently unstable, and only
   available when `Z_FEATURE_UNSTABLE_API` is enabled, and may be changed in a future release.
 
-Zenoh-Pico supports a single configured listen locator.
-Configuring more than one listen locator causes `z_open` to fail.
+Zenoh-Pico supports multiple configured listen locators.
 
-`Z_CONFIG_LISTEN_TIMEOUT_KEY` accepts the following values:
-
-* `0`: no retry, try opening the listen locator once.
-* `>0`: retry retryable listen failures until the timeout expires.
-* `-1`: retry indefinitely.
-
-The default listen timeout is `0`.
 
 `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` accepts `true` or `false`.
 Its default value is `true`.
 
-If `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` is `true`, non-retryable listen errors fail immediately.
-Retryable listen errors are retried according to `Z_CONFIG_LISTEN_TIMEOUT_KEY`; if the timeout expires before the listen
-locator is opened, `z_open` fails.
-In peer mode, if listening fails and `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` is `false`, Zenoh-Pico may still open the
-session by connecting to a configured connect locator.
-If no listen or connect locator establishes a primary transport, `z_open` fails.
+If `Z_CONFIG_LISTEN_EXIT_ON_FAILURE_KEY` is `true`, listen errors fail immediately.
 
 TLS
 ---
@@ -178,7 +156,10 @@ These options can be changed manually in `config.h.in` if your build system invo
 * `Z_REQ_RESOLUTION`: Length of the request id as enum value (0: 8bits, 1: 16 bits, 2: 32 bits, 3: 64 bits)
 * `Z_RX_CACHE_SIZE`: Width of the rx cache, when activated.
 * `Z_GET_TIMEOUT_DEFAULT`: Default value for a request timeout, in milliseconds.
-* `Z_LISTEN_MAX_CONNECTION_NB`: Maximum number of connections on a listening socket.
+* `Z_MAX_NUM_UNICAST_PEERS`: Maximum number of simultaneously connected remote unicast peers per session.
+* `Z_MAX_NUM_MULTICAST_PEERS`: Maximum number of simultaneously connected remote multicast peers per session.
+* `Z_MAX_NUM_UNICAST_LISTENERS`: Maximum number of active unicast listeners per session.
+* `Z_MAX_NUM_MULTICAST_LISTENERS`: Maximum number of active multicast listeners per session.
 * `ZP_ASM_NOP`: Change this options if your platform doesn't have a standard `nop` instruction.
 
 Generated compile-time options
@@ -195,11 +176,10 @@ All the generated options must be changed in zenoh-pico's CMake (beware of CMake
 * `Z_RUNTIME_MAX_TASKS`: (DEFAULT: 64) Maximum number of tasks in zenoh-pico's runtime.
 * `Z_RUNTIME_IDLE_READ_TASK_SLEEP`: (DEFAULT: 0) Idle read task sleep duration in milliseconds.
 * `Z_TRANSPORT_ACCEPT_TIMEOUT`: (DEFAULT: 1000) Link accept timeout in P2P mode in milliseconds.
-* `Z_TRANSPORT_CONNECT_TIMEOUT`: (DEFAULT: 10000) Link connect timeout in P2P mode in milliseconds.
+* `Z_TRANSPORT_CONNECT_TIMEOUT`: (DEFAULT: 1000) Link connect timeout in P2P mode in milliseconds.
 * `Z_MAX_KEYEXPR_LENGTH`: (DEFAULT: 256) Maximum key expression length accepted by zenoh-pico.
 * `Z_FEATURE_TCP_NODELAY`: (DEFAULT: ON) Toggle the `TCP_NODELAY` socket option that disables Nagle's algorithm as it can cause latency spikes.
 * `Z_FEATURE_AUTO_RECONNECT`: (DEFAULT: ON) Toggle the auto reconnection feature.
-* `Z_FEATURE_MULTICAST_DECLARATIONS`: (DEFAULT: OFF) Toggle multicast declarations. It lets nodes declare key expressions and activate write filtering but requires each node to send all the declarations every time a new node join the network. 
 * `Z_FEATURE_RX_CACHE`: (DEFAULT: OFF) Toggle LRU cache on the Rx side, improves throughput at the cost of heap memory.
 * `Z_FEATURE_BATCH_TX_MUTEX`: (DEFAULT: OFF) Toggle tx mutex lock at a batch level instead of at a message level. Improves throughput at the risk of losing connection as it prevents session to send keep alive messages.
 * `Z_FEATURE_BATCH_PEER_MUTEX`: (DEFAULT: OFF) Toggle peer mutex lock at a batch level instead of at a message level. Prevents reception of messages from peers while batching is active, may also trigger loss of connection.
@@ -227,7 +207,7 @@ The following options are here to reduce binary sizes for users that don't need 
 * `Z_FEATURE_FRAGMENTATION`: (DEFAULT: ON) Toggle fragmentation feature, the library can't send or receive fragmented messages without this.
 * `Z_FEATURE_MULTICAST_TRANSPORT`: (DEFAULT: ON) Toggle multicast transport feature, the library can't handle multicast connections without this.
 * `Z_FEATURE_UNICAST_TRANSPORT`: (DEFAULT: ON) Toggle unicast transport feature, the library can't handle unicast connections without this.
-* `Z_FEATURE_RAWETH_TRANSPORT`:  (DEFAULT: OFF) Toggle compilation of raw ethernet transport, the library can't handle raw ethernet connections without this.
+* `Z_FEATURE_RAWETH_TRANSPORT`:  (DEFAULT: OFF) Toggle compilation of raw ethernet transport, the library can't handle raw ethernet connections without this (requires `Z_FEATURE_MULTICAST_TRANSPORT`).
 * `Z_FEATURE_UNICAST_PEER`: (DEFAULT: ON) Toggle unicast peer feature, the library can't do peer to peer unicast without this.
 * `Z_FEATURE_LINK_TCP`: (DEFAULT: ON) Toggle compilation of TCP link support. 
 * `Z_FEATURE_LINK_UDP_MULTICAST`: (DEFAULT: ON) Toggle compilation of UDP multicast link support.

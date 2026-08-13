@@ -42,6 +42,7 @@
 #endif
 
 #ifndef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_DESTROY_FN
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE
 #define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_DESTROY_FN(x) (void)(x)
 #endif
 #ifndef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_MOVE_FN
@@ -60,6 +61,19 @@ typedef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_
 // iter_t is the iterator type (a plain index). Used by algorithms_template.h macros.
 typedef size_t _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, iter_t);
 
+// Input parameter type for push_back/append/insert. Elements are passed by const
+// pointer when they are both trivially moveable (moved in via a plain copy that
+// leaves the source intact) and trivially destructible, so these functions never
+// mutate or consume the source. Otherwise a mutable pointer is required because a
+// custom move may consume the source. See the note on const_get regarding
+// applying `const` to the elem_t typedef rather than the underlying type.
+#if defined(_ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE) && \
+    defined(_ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE)
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE const _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, elem_t)
+#else
+#define _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE
+#endif
+
 // Initializes a new, empty vector. All fields are zero-initialised.
 static inline void _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, init)(_ZP_STATIC_VECTOR_TEMPLATE_TYPE *vec) {
     memset(vec, 0, sizeof(_ZP_STATIC_VECTOR_TEMPLATE_TYPE));
@@ -67,7 +81,8 @@ static inline void _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, init)(_ZP_STATIC_VEC
 
 // Creates a new, empty vector. All fields are zero-initialised.
 static inline _ZP_STATIC_VECTOR_TEMPLATE_TYPE _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, new)(void) {
-    _ZP_STATIC_VECTOR_TEMPLATE_TYPE vec = {0};
+    _ZP_STATIC_VECTOR_TEMPLATE_TYPE vec;
+    _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, init)(&vec);
     return vec;
 }
 
@@ -133,8 +148,9 @@ static inline const _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, elem_t) *
 
 // Appends an element to the back of the vector by moving it from @p elem.
 // Returns true on success, or false if the vector is at full capacity.
-static inline bool _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, push_back)(_ZP_STATIC_VECTOR_TEMPLATE_TYPE *vec,
-                                                                       _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE *elem) {
+static inline bool _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME,
+                           push_back)(_ZP_STATIC_VECTOR_TEMPLATE_TYPE *vec,
+                                      _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elem) {
     if (vec->_size == _ZP_STATIC_VECTOR_TEMPLATE_SIZE) {
         return false;
     }
@@ -148,7 +164,7 @@ static inline bool _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, push_back)(_ZP_STATI
 // Returns true on success, or false if the vector does not have enough remaining capacity,
 // in which case the vector is left unchanged and no elements are moved.
 static inline bool _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, append)(_ZP_STATIC_VECTOR_TEMPLATE_TYPE *vec,
-                                                                    _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE *elems,
+                                                                    _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elems,
                                                                     size_t len) {
     if (len == 0) {
         return true;
@@ -209,7 +225,7 @@ static inline _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE *_ZP_CAT(_ZP_STATIC_VECTOR_TE
 // Inserts an element at the given index by moving it from @p elem, shifting subsequent elements right.
 // Returns true on success, or false if the vector is at full capacity or the index is out of bounds.
 static inline bool _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, insert)(_ZP_STATIC_VECTOR_TEMPLATE_TYPE *vec, size_t index,
-                                                                    _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TYPE *elem) {
+                                                                    _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE *elem) {
     if (vec->_size == _ZP_STATIC_VECTOR_TEMPLATE_SIZE || index > vec->_size) {
         return false;
     }
@@ -340,4 +356,8 @@ static inline _ZP_CAT(_ZP_STATIC_VECTOR_TEMPLATE_NAME, iter_t)
 #ifdef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE
 #undef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_MOVEABLE
 #endif
+#ifdef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE
+#undef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_TRIVIALLY_DESTRUCTIBLE
+#endif
+#undef _ZP_STATIC_VECTOR_TEMPLATE_ELEM_INPUT_TYPE
 #undef _ZP_STATIC_VECTOR_TEMPLATE_SIZE

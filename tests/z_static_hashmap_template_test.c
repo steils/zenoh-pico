@@ -657,7 +657,7 @@ static void test_algorithms_remove(void) {
         uint32_t k = i, v = i;
         assert(u32map_insert(&m, &k, &v) != u32map_end(&m));
     }
-    _ZP_REMOVE(u32map, &m, _->key % 2 != 0);
+    _ZP_REMOVE_ALL(u32map, &m, _->key % 2 != 0);
 
     assert(u32map_size(&m) == N / 2);
     for (uint32_t i = 0; i < N; i++) {
@@ -678,7 +678,7 @@ static void test_algorithms_remove_all(void) {
         uint32_t k = i, v = i;
         assert(u32map_insert(&m, &k, &v) != u32map_end(&m));
     }
-    _ZP_REMOVE(u32map, &m, true);
+    _ZP_REMOVE_ALL(u32map, &m, true);
 
     assert(u32map_is_empty(&m));
     assert(u32map_begin(&m) == u32map_end(&m));

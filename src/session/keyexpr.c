@@ -45,7 +45,7 @@ z_result_t _z_keyexpr_wire_declaration_undeclare(_z_keyexpr_wire_declaration_t *
     _z_session_rc_t session_rc = _z_session_weak_upgrade_if_open(&declaration->_session);
 
     if (!_Z_RC_IS_NULL(&session_rc)) {
-        ret = _z_undeclare_resource(_Z_RC_IN_VAL(&session_rc), declaration->_id);
+        ret = _z_undeclare_local_resource(_Z_RC_IN_VAL(&session_rc), declaration->_id);
         _z_session_rc_drop(&session_rc);
     }
     declaration->_id = Z_RESOURCE_ID_NONE;
@@ -493,13 +493,6 @@ z_result_t _z_keyexpr_declare_prefix(const _z_session_rc_t *zs, _z_declared_keye
     if (prefix_len == 0) {
         return _Z_RES_OK;
     }
-#if Z_FEATURE_MULTICAST_DECLARATIONS == 0
-    if (_Z_RC_IN_VAL(zs)->_tp._type == _Z_TRANSPORT_MULTICAST_TYPE) {
-        // Skip declaration since declaring a keyexpr without Z_FEATURE_MULTICAST_DECLARATIONS might generate unknown
-        // key expression errors.
-        return _Z_RES_OK;
-    }
-#endif
     _z_keyexpr_wire_declaration_t declaration = _z_keyexpr_wire_declaration_null();
     out->_declaration = _z_keyexpr_wire_declaration_rc_new_from_val(&declaration);
     if (_Z_RC_IS_NULL(&out->_declaration)) {

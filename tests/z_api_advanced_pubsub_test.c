@@ -82,8 +82,8 @@ static void expect_empty(const z_loaned_fifo_handler_sample_t *handler) {
     ASSERT_NOT_OK(z_try_recv(handler, &sample));
 }
 
-static void test_advanced_history(bool p2p) {
-    printf("test_advanced_history: peer to peer=%d\n", p2p);
+static void test_advanced_history(void) {
+    printf("test_advanced_history\n");
 
     const char *expr = "zenoh-pico/advanced-pubsub/test/history";
 
@@ -93,14 +93,6 @@ static void test_advanced_history(bool p2p) {
     z_config_default(&c2);
     z_view_keyexpr_t k;
     ASSERT_OK(z_view_keyexpr_from_str(&k, expr));
-
-    if (p2p) {
-        zp_config_insert(z_loan_mut(c1), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
-
-        zp_config_insert(z_loan_mut(c2), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(c2), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
-    }
 
     ASSERT_OK(z_open(&s1, z_config_move(&c1), NULL));
     ASSERT_OK(z_open(&s2, z_config_move(&c2), NULL));
@@ -147,6 +139,10 @@ static void test_advanced_history(bool p2p) {
 }
 
 #ifdef Z_ADVANCED_PUBSUB_TEST_USE_TCP_PROXY
+// global variables to hold the URIs for the two sessions, so that they can be used in the proxy setup function, since
+// config requires strings to be static.
+char uri_connect[128];
+char uri_listen[128];
 static void setup_two_peers_with_proxy(z_owned_session_t *s1, z_owned_session_t *s2, tcp_proxy_t **proxy,
                                        uint16_t upstream_listen_port) {
     *proxy = tcp_proxy_create("127.0.0.1", "127.0.0.1", upstream_listen_port);
@@ -159,17 +155,15 @@ static void setup_two_peers_with_proxy(z_owned_session_t *s1, z_owned_session_t 
     z_config_default(&c1);
     z_config_default(&c2);
 
-    char uri[128];
-
     // s1 listens on the fixed upstream port
     zp_config_insert(z_loan_mut(c1), Z_CONFIG_MODE_KEY, "peer");
-    snprintf(uri, sizeof(uri), "tcp/127.0.0.1:%u#iface=lo", (unsigned)upstream_listen_port);
-    zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, uri);
+    snprintf(uri_listen, sizeof(uri_listen), "tcp/127.0.0.1:%u#iface=lo", (unsigned)upstream_listen_port);
+    zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, uri_listen);
 
     // s2 connects via proxy ephemeral port
     zp_config_insert(z_loan_mut(c2), Z_CONFIG_MODE_KEY, "peer");
-    snprintf(uri, sizeof(uri), "tcp/127.0.0.1:%u#iface=lo", (unsigned)port);
-    zp_config_insert(z_loan_mut(c2), Z_CONFIG_CONNECT_KEY, uri);
+    snprintf(uri_connect, sizeof(uri_connect), "tcp/127.0.0.1:%u#iface=lo", (unsigned)port);
+    zp_config_insert(z_loan_mut(c2), Z_CONFIG_CONNECT_KEY, uri_connect);
 
     ASSERT_OK(z_open(s1, z_config_move(&c1), NULL));
     ASSERT_OK(z_open(s2, z_config_move(&c2), NULL));
@@ -722,10 +716,7 @@ static void test_advanced_local_pubsub(void) {
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
-    test_advanced_history(false);
-#if defined(ZENOH_LINUX)
-    test_advanced_history(true);
-#endif
+    test_advanced_history();
 #ifdef Z_ADVANCED_PUBSUB_TEST_USE_TCP_PROXY
     test_advanced_retransmission();
     test_advanced_retransmission_periodic();

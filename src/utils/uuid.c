@@ -35,9 +35,20 @@ void _z_uuid_to_bytes(uint8_t *bytes, const char *uuid_str) {
     }
 }
 
-_z_string_t _z_id_to_string(const _z_id_t *id) {
+z_result_t _z_id_to_str(const _z_id_t *id, char *out_str, size_t *out_len) {
     _z_slice_t buf = _z_slice_alias_buf(id->id, sizeof(id->id));
-    return _z_string_convert_bytes_le(&buf);
+    return _z_str_convert_bytes_le(&buf, out_str, out_len);
+}
+
+_z_string_t _z_id_to_string(const _z_id_t *id) {
+    size_t out_len = ZENOH_ID_SIZE * 2;
+    char *out_str = (char *)z_malloc(ZENOH_ID_SIZE * 2);
+    if (out_str == NULL) {
+        return _z_string_null();
+    }
+    _z_slice_t buf = _z_slice_alias_buf(id->id, sizeof(id->id));
+    _z_str_convert_bytes_le(&buf, out_str, &out_len);
+    return _z_string_from_substr_custom_deleter(out_str, out_len, _z_delete_context_default());
 }
 
 _z_id_t _z_id_from_string(const _z_string_t *str) {

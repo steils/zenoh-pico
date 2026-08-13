@@ -57,6 +57,9 @@ typedef struct {
     _z_string_t _keyexpr;
 } _z_keyexpr_t;
 
+#define _Z_KEYEXPR_PRINT_FORMAT _Z_STRING_PRINT_FORMAT
+#define _Z_KEYEXPR_PRINT_ARG(k) _Z_STRING_PRINT_ARG(&(k)->_keyexpr)
+
 static inline _z_keyexpr_t _z_keyexpr_null(void) {
     _z_keyexpr_t ke = {0};
     return ke;

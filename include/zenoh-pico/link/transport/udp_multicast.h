@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "zenoh-pico/collections/slice.h"
+#include "zenoh-pico/link/address.h"
 #include "zenoh-pico/link/transport/udp_unicast.h"
 
 #ifdef __cplusplus
@@ -45,15 +45,29 @@ z_result_t _z_udp_multicast_listen(_z_sys_net_socket_t *sock, const _z_sys_net_e
                                    const char *iface, const char *join);
 void _z_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socket_t *socksend,
                             const _z_sys_net_endpoint_t rep, const _z_sys_net_endpoint_t lep);
-
-size_t _z_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                   const _z_sys_net_endpoint_t lep, _z_slice_t *ep);
 // flawfinder: ignore
 size_t _z_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len, const _z_sys_net_endpoint_t lep,
-                             _z_slice_t *ep);
+                             _z_link_address_t *ep_out);
 size_t _z_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
                               const _z_sys_net_endpoint_t rep);
 
+z_result_t _z_endpoint_udp_multicast_valid(const _z_endpoint_t *ep);
+
+typedef struct {
+    _z_sys_net_socket_t _sock;
+    _z_sys_net_socket_t _msock;
+    _z_sys_net_endpoint_t _rep;
+    _z_sys_net_endpoint_t _lep;
+} _z_multicast_link_udp_t;
+
+bool _z_multicast_link_udp_read(_z_multicast_link_udp_t *udp, uint8_t *ptr, size_t *len, _z_link_address_t *addr_out);
+bool _z_multicast_link_udp_write(_z_multicast_link_udp_t *udp, const uint8_t *ptr, size_t *len);
+z_result_t _z_multicast_link_udp_create(_z_multicast_link_udp_t *udp, const _z_endpoint_t *endpoint);
+void _z_multicast_link_udp_clear(_z_multicast_link_udp_t *udp);
+uint16_t _z_multicast_link_udp_get_mtu(const _z_multicast_link_udp_t *udp);
+bool _z_multicast_link_udp_is_reliable(const _z_multicast_link_udp_t *udp);
+bool _z_multicast_link_udp_is_streamed(const _z_multicast_link_udp_t *udp);
+_z_sys_net_socket_t *_z_multicast_link_udp_get_sock(_z_multicast_link_udp_t *udp);
 #endif
 
 #ifdef __cplusplus

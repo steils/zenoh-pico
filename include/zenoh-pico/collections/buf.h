@@ -26,7 +26,9 @@
 #define _ZP_VECTOR_TEMPLATE_NAME _z_uint8_vec
 #define _ZP_VECTOR_TEMPLATE_ALLOC_FN z_malloc
 #define _ZP_VECTOR_TEMPLATE_FREE_FN z_free
+#if defined(_ZP_PLATFORM_HAS_REALLOC)
 #define _ZP_VECTOR_TEMPLATE_REALLOC_FN z_realloc
+#endif
 #include "zenoh-pico/collections/vector_template.h"
 
 typedef struct _z_write_buf_t {

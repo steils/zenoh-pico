@@ -44,15 +44,12 @@ uint8_t _z_id_len(_z_id_t id) {
     return len;
 }
 
-size_t _z_id_hash(const _z_id_t *id) {
-    size_t hash = (size_t)_Z_FNV_OFFSET_BASIS;
+size_t _z_id_hash(const _z_id_t *id) { return _z_fnv1_hash(id->id, ZENOH_ID_SIZE); }
 
-    for (size_t i = 0; i < ZENOH_ID_SIZE; ++i) {
-        hash ^= id->id[i];
-        hash *= _Z_FNV_PRIME;
-    }
-
-    return hash;
+_z_id_t _z_id_generate_random(void) {
+    _z_id_t id;
+    z_random_fill(id.id, ZENOH_ID_SIZE);
+    return id;
 }
 
 int _z_id_cmp(const _z_id_t *left, const _z_id_t *right) {
@@ -114,14 +111,7 @@ z_result_t _z_value_move(_z_value_t *dst, _z_value_t *src) {
 }
 
 size_t _z_entity_global_id_hash(const _z_entity_global_id_t *e) {
-    size_t hash = _z_id_hash(&e->zid);
-
-    for (size_t i = 0; i < sizeof(e->eid); ++i) {
-        hash ^= ((uint8_t *)&e->eid)[i];
-        hash *= _Z_FNV_PRIME;
-    }
-
-    return hash;
+    return _z_hash_combine(_z_id_hash(&e->zid), (size_t)e->eid);
 }
 
 z_result_t _z_source_info_copy(_z_source_info_t *dst, const _z_source_info_t *src) {

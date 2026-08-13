@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 
 #include "FreeRTOS.h"
@@ -47,14 +48,6 @@ void *z_malloc(size_t size) {
         return NULL;
     }
     return pvPortMalloc(size);
-}
-
-void *z_realloc(void *ptr, size_t size) {
-    _ZP_UNUSED(ptr);
-    _ZP_UNUSED(size);
-    // realloc not implemented in FreeRTOS
-    assert(false);
-    return NULL;
 }
 
 void z_free(void *ptr) { vPortFree(ptr); }
@@ -287,6 +280,22 @@ z_clock_t z_clock_now(void) {
     z_clock_t now;
     __z_clock_gettime(&now);
     return now;
+}
+
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (l->tv_sec < r->tv_sec) {
+        return -1;
+    } else if (l->tv_sec > r->tv_sec) {
+        return 1;
+    } else {
+        if (l->tv_nsec < r->tv_nsec) {
+            return -1;
+        } else if (l->tv_nsec > r->tv_nsec) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
 }
 
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {

@@ -25,21 +25,20 @@ extern "C" {
 #endif
 
 typedef struct _z_socket_wait_iter_t _z_socket_wait_iter_t;
-typedef void (*_z_socket_wait_iter_reset_f)(_z_socket_wait_iter_t *iter);
+typedef bool (*_z_socket_wait_iter_reset_f)(_z_socket_wait_iter_t *iter);
 typedef bool (*_z_socket_wait_iter_next_f)(_z_socket_wait_iter_t *iter);
 typedef const _z_sys_net_socket_t *(*_z_socket_wait_iter_get_socket_f)(const _z_socket_wait_iter_t *iter);
 typedef void (*_z_socket_wait_iter_set_ready_f)(_z_socket_wait_iter_t *iter, bool ready);
 
 struct _z_socket_wait_iter_t {
     void *_ctx;
-    void *_current_entry;
     _z_socket_wait_iter_reset_f _reset;
     _z_socket_wait_iter_next_f _next;
     _z_socket_wait_iter_get_socket_f _get_socket;
     _z_socket_wait_iter_set_ready_f _set_ready;
 };
 
-static inline void _z_socket_wait_iter_reset(_z_socket_wait_iter_t *iter) { iter->_reset(iter); }
+static inline bool _z_socket_wait_iter_reset(_z_socket_wait_iter_t *iter) { return iter->_reset(iter); }
 static inline bool _z_socket_wait_iter_next(_z_socket_wait_iter_t *iter) { return iter->_next(iter); }
 static inline const _z_sys_net_socket_t *_z_socket_wait_iter_get_socket(const _z_socket_wait_iter_t *iter) {
     return iter->_get_socket(iter);

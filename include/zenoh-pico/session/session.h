@@ -25,9 +25,9 @@
 #include "zenoh-pico/collections/string.h"
 #include "zenoh-pico/config.h"
 #include "zenoh-pico/protocol/core.h"
+#include "zenoh-pico/protocol/definitions/network.h"
 #include "zenoh-pico/session/cancellation.h"
 #include "zenoh-pico/session/keyexpr.h"
-#include "zenoh-pico/transport/manager.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -216,8 +216,6 @@ struct __z_hello_handler_wrapper_t;  // Forward declaration to be used in _z_clo
  */
 typedef void (*_z_closure_hello_callback_t)(_z_hello_t *hello, struct __z_hello_handler_wrapper_t *arg);
 
-z_result_t _z_session_generate_zid(_z_id_t *bs, uint8_t size);
-
 typedef enum {
     _Z_INTEREST_MSG_TYPE_FINAL = 0,
     _Z_INTEREST_MSG_TYPE_DECL_SUBSCRIBER = 1,
@@ -239,7 +237,7 @@ typedef struct _z_interest_msg_t {
 /**
  * The callback signature of the functions handling interest messages.
  */
-typedef void (*_z_interest_handler_t)(const _z_interest_msg_t *msg, _z_transport_peer_common_t *peer, void *arg);
+typedef void (*_z_interest_handler_t)(const _z_interest_msg_t *msg, size_t peer_id, void *arg);
 
 typedef struct {
     _z_keyexpr_t _key;
@@ -272,7 +270,7 @@ typedef enum {
 
 typedef struct {
     _z_keyexpr_t _key;
-    _z_transport_peer_common_t *_peer;
+    size_t _peer_id;
     uint32_t _id;
     uint8_t _type;
     bool _complete;

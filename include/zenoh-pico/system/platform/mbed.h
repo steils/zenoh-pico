@@ -24,6 +24,8 @@
 extern "C" {
 #endif
 
+#define _ZP_PLATFORM_HAS_REALLOC
+
 typedef int _z_socket_t;
 
 #if Z_FEATURE_MULTI_THREAD == 1

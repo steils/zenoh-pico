@@ -28,13 +28,11 @@
 
 #if Z_FEATURE_RAWETH_TRANSPORT == 1
 
-static size_t _z_raweth_link_recv_zbuf(const _z_link_t *link, _z_zbuf_t *zbf, _z_slice_t *addr) {
-    uint8_t *buff = _z_zbuf_get_wptr(zbf);
-    size_t rb = _z_receive_raweth(&link->_socket._raweth._sock, buff, _z_zbuf_writable_space_left(zbf), addr,
-                                  &link->_socket._raweth._whitelist);
-    // Check validity
-    if ((rb == SIZE_MAX) || (rb < sizeof(_zp_eth_header_t))) {
-        return SIZE_MAX;
+z_result_t _z_raweth_process_rx_buffer(_z_zbuf_t *zbf) {
+    uint8_t *buff = _z_zbuf_get_rptr(zbf);
+    size_t readable_len = _z_zbuf_readable_len(zbf);
+    if (readable_len < sizeof(_zp_eth_header_t)) {
+        return _Z_ERR_TRANSPORT_RX_FAILED;
     }
     // Check if header has vlan
     bool has_vlan = false;
@@ -43,74 +41,34 @@ static size_t _z_raweth_link_recv_zbuf(const _z_link_t *link, _z_zbuf_t *zbf, _z
         has_vlan = true;
     }
     // Check validity
-    if (has_vlan && (rb < sizeof(_zp_eth_vlan_header_t))) {
-        return SIZE_MAX;
+    if (has_vlan && (readable_len < sizeof(_zp_eth_vlan_header_t))) {
+        return _Z_ERR_TRANSPORT_RX_FAILED;
     }
     size_t data_length = 0;
     if (has_vlan) {
         _zp_eth_vlan_header_t *vlan_header = (_zp_eth_vlan_header_t *)buff;
         // Retrieve data length
         data_length = _z_raweth_ntohs(vlan_header->data_length);
-        if (rb < (data_length + sizeof(_zp_eth_vlan_header_t))) {
+        if (readable_len < (data_length + sizeof(_zp_eth_vlan_header_t))) {
             // Invalid data_length
-            return SIZE_MAX;
+            return _Z_ERR_TRANSPORT_RX_FAILED;
         }
         // Skip header
-        _z_zbuf_set_wpos(zbf, _z_zbuf_get_wpos(zbf) + sizeof(_zp_eth_vlan_header_t) + data_length);
+        _z_zbuf_set_wpos(zbf, _z_zbuf_get_rpos(zbf) + sizeof(_zp_eth_vlan_header_t) + data_length);
         _z_zbuf_set_rpos(zbf, _z_zbuf_get_rpos(zbf) + sizeof(_zp_eth_vlan_header_t));
     } else {
         header = (_zp_eth_header_t *)buff;
         // Retrieve data length
         data_length = _z_raweth_ntohs(header->data_length);
-        if (rb < (data_length + sizeof(_zp_eth_header_t))) {
+        if (readable_len < (data_length + sizeof(_zp_eth_header_t))) {
             // Invalid data_length
-            return SIZE_MAX;
+            return _Z_ERR_TRANSPORT_RX_FAILED;
         }
         // Skip header
-        _z_zbuf_set_wpos(zbf, _z_zbuf_get_wpos(zbf) + sizeof(_zp_eth_header_t) + data_length);
+        _z_zbuf_set_wpos(zbf, _z_zbuf_get_rpos(zbf) + sizeof(_zp_eth_header_t) + data_length);
         _z_zbuf_set_rpos(zbf, _z_zbuf_get_rpos(zbf) + sizeof(_zp_eth_header_t));
     }
-    return data_length;
+    return _Z_RES_OK;
 }
 
-/*------------------ Reception helper ------------------*/
-z_result_t _z_raweth_recv_t_msg(_z_transport_multicast_t *ztm, _z_transport_message_t *t_msg, _z_slice_t *addr) {
-    _Z_DEBUG(">> recv session msg");
-    z_result_t ret = _Z_RES_OK;
-
-    // Prepare the buffer
-    _z_zbuf_reset(&ztm->_common._zbuf);
-
-    switch (ztm->_common._link->_cap._flow) {
-        // Datagram capable links
-        case Z_LINK_CAP_FLOW_DATAGRAM: {
-            _z_zbuf_compact(&ztm->_common._zbuf);
-            // Read from link
-            size_t to_read = _z_raweth_link_recv_zbuf(ztm->_common._link, &ztm->_common._zbuf, addr);
-            if (to_read == SIZE_MAX) {
-                _Z_ERROR_LOG(_Z_ERR_TRANSPORT_RX_FAILED);
-                ret = _Z_ERR_TRANSPORT_RX_FAILED;
-            }
-            break;
-        }
-        default:
-            _Z_ERROR_LOG(_Z_ERR_GENERIC);
-            ret = _Z_ERR_GENERIC;
-            break;
-    }
-    // Decode message
-    if (ret == _Z_RES_OK) {
-        _Z_DEBUG(">> \t transport_message_decode: %ju", (uintmax_t)_z_zbuf_readable_len(&ztm->_common._zbuf));
-        ret = _z_transport_message_decode(t_msg, &ztm->_common._zbuf);
-    }
-    return ret;
-}
-
-#else
-z_result_t _z_raweth_recv_t_msg(_z_transport_multicast_t *ztm, _z_transport_message_t *t_msg, _z_slice_t *addr) {
-    _ZP_UNUSED(ztm);
-    _ZP_UNUSED(t_msg);
-    _ZP_UNUSED(addr);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
-}
 #endif  // Z_FEATURE_RAWETH_TRANSPORT == 1

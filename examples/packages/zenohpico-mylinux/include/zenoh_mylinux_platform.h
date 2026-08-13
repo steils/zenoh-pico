@@ -54,9 +54,6 @@ typedef struct {
         int _fd;
 #endif
     };
-#if Z_FEATURE_LINK_TLS == 1
-    void *_tls_sock;
-#endif
 } _z_sys_net_socket_t;
 
 typedef struct {

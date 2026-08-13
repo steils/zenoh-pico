@@ -12,6 +12,8 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
+#include "zenoh-pico/transport/connectivity.h"
+
 #include <stdbool.h>
 
 #include "zenoh-pico/api/primitives.h"
@@ -35,8 +37,8 @@ static inline void _z_connectivity_transport_from_event_data(_z_info_transport_t
     out->_is_shm = false;
 }
 
-static z_result_t _z_connectivity_link_fill(_z_info_link_t *link, const _z_connectivity_peer_event_data_t *peer,
-                                            uint16_t mtu, bool is_streamed, bool is_reliable) {
+static void _z_connectivity_link_fill(_z_info_link_t *link, const _z_connectivity_peer_event_data_t *peer, uint16_t mtu,
+                                      bool is_streamed, bool is_reliable) {
     *link = (_z_info_link_t){0};
     link->_src = _z_string_null();
     link->_dst = _z_string_null();
@@ -44,13 +46,15 @@ static z_result_t _z_connectivity_link_fill(_z_info_link_t *link, const _z_conne
     link->_mtu = mtu;
     link->_is_streamed = is_streamed;
     link->_is_reliable = is_reliable;
-    if (_z_string_check(&peer->_link_src)) {
-        _Z_RETURN_IF_ERR(_z_string_copy(&link->_src, &peer->_link_src));
+    if (!_z_string_view_is_empty(&peer->_link_src)) {
+        link->_src = _z_string_alias(*_z_string_view_deref(&peer->_link_src));
     }
-    if (_z_string_check(&peer->_link_dst)) {
-        _Z_CLEAN_RETURN_IF_ERR(_z_string_copy(&link->_dst, &peer->_link_dst), _z_string_clear(&link->_src));
+    if (!_z_string_view_is_empty(&peer->_link_dst)) {
+        link->_dst = _z_string_alias(*_z_string_view_deref(&peer->_link_dst));
     }
-    return _Z_RES_OK;
+    if (!_z_string_view_is_empty(&peer->_mcast_group)) {
+        link->_mcast_group = _z_string_alias(*_z_string_view_deref(&peer->_mcast_group));
+    }
 }
 
 static inline void _z_connectivity_link_clear(_z_info_link_t *link) {
@@ -62,37 +66,6 @@ static inline void _z_connectivity_link_clear(_z_info_link_t *link) {
 static inline void _z_connectivity_link_event_clear(_z_info_link_event_t *event) {
     _z_connectivity_link_clear(&event->link);
     event->kind = Z_SAMPLE_KIND_DEFAULT;
-}
-
-static bool _z_connectivity_dispatch_link_put_for_peer(_z_closure_link_event_t *callback,
-                                                       const _z_transport_common_t *transport_common,
-                                                       const _z_transport_peer_common_t *peer, bool is_multicast,
-                                                       bool has_transport_filter,
-                                                       const _z_info_transport_t *transport_filter) {
-    _z_connectivity_peer_event_data_t peer_event_data = {0};
-    _z_connectivity_peer_event_data_alias_from_common(&peer_event_data, peer);
-
-    _z_info_transport_t info_transport;
-    _z_connectivity_transport_from_event_data(&info_transport, &peer_event_data, is_multicast);
-    if (has_transport_filter && !_z_info_transport_filter_match(&info_transport, transport_filter)) {
-        return true;
-    }
-
-    uint16_t mtu = 0;
-    bool is_streamed = false;
-    bool is_reliable = false;
-    _z_transport_link_properties_from_transport(transport_common, &mtu, &is_streamed, &is_reliable);
-
-    _z_info_link_event_t event = {0};
-    event.kind = Z_SAMPLE_KIND_PUT;
-    if (_z_connectivity_link_fill(&event.link, &peer_event_data, mtu, is_streamed, is_reliable) != _Z_RES_OK) {
-        _z_connectivity_link_event_clear(&event);
-        return false;
-    }
-
-    callback->call(&event, callback->context);
-    _z_connectivity_link_event_clear(&event);
-    return true;
 }
 
 typedef struct {
@@ -276,7 +249,7 @@ static void _z_connectivity_dispatch_transport_event(_z_session_t *session, _z_i
     _z_connectivity_transport_listener_intmap_clear(&snapshot);
 }
 
-static void _z_connectivity_dispatch_link_event(_z_session_t *session, _z_info_link_event_t *event, bool is_multicast) {
+static void _z_connectivity_dispatch_link_event(_z_session_t *session, _z_info_link_event_t *event) {
     _z_connectivity_link_listener_intmap_t snapshot = _z_connectivity_link_listener_intmap_make();
 
     _z_session_mutex_lock(session);
@@ -285,6 +258,7 @@ static void _z_connectivity_dispatch_link_event(_z_session_t *session, _z_info_l
 
     _z_connectivity_link_listener_intmap_iterator_t it = _z_connectivity_link_listener_intmap_iterator_make(&snapshot);
     while (_z_connectivity_link_listener_intmap_iterator_next(&it)) {
+        bool is_multicast = !_z_string_is_empty(&event->link._mcast_group);
         _z_connectivity_link_listener_t *listener = _z_connectivity_link_listener_intmap_iterator_value(&it);
         if (listener->_has_transport_filter && (!_z_id_eq(&listener->_transport_zid, &event->link._zid) ||
                                                 listener->_transport_is_multicast != is_multicast)) {
@@ -298,99 +272,6 @@ static void _z_connectivity_dispatch_link_event(_z_session_t *session, _z_info_l
     }
 
     _z_connectivity_link_listener_intmap_clear(&snapshot);
-}
-
-static void _z_connectivity_replay_transport_history(_z_session_t *session,
-                                                     _z_connectivity_transport_cb_state_t *callback_state) {
-    if (callback_state == NULL || callback_state->_closure.call == NULL) {
-        return;
-    }
-    _z_closure_transport_event_t *callback = &callback_state->_closure;
-
-    _z_transport_t *transport = &session->_tp;
-    _z_transport_common_t *transport_common = _z_transport_get_common(transport);
-    if (transport_common != NULL) {
-        _z_transport_peer_mutex_lock(transport_common);
-    }
-
-    switch (transport->_type) {
-        case _Z_TRANSPORT_UNICAST_TYPE: {
-            _z_transport_peer_unicast_slist_t *curr = transport->_transport._unicast._peers;
-            for (; curr != NULL; curr = _z_transport_peer_unicast_slist_next(curr)) {
-                _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_slist_value(curr);
-                _z_info_transport_event_t event = {0};
-                event.kind = Z_SAMPLE_KIND_PUT;
-                _z_info_transport_from_peer(&event.transport, &peer->common, false);
-                callback->call(&event, callback->context);
-            }
-            break;
-        }
-        case _Z_TRANSPORT_MULTICAST_TYPE:
-        case _Z_TRANSPORT_RAWETH_TYPE: {
-            _z_transport_peer_multicast_slist_t *curr = transport->_transport._multicast._peers;
-            for (; curr != NULL; curr = _z_transport_peer_multicast_slist_next(curr)) {
-                _z_transport_peer_multicast_t *peer = _z_transport_peer_multicast_slist_value(curr);
-                _z_info_transport_event_t event = {0};
-                event.kind = Z_SAMPLE_KIND_PUT;
-                _z_info_transport_from_peer(&event.transport, &peer->common, true);
-                callback->call(&event, callback->context);
-            }
-            break;
-        }
-        default:
-            break;
-    }
-
-    if (transport_common != NULL) {
-        _z_transport_peer_mutex_unlock(transport_common);
-    }
-}
-
-static void _z_connectivity_replay_link_history(_z_session_t *session, _z_connectivity_link_cb_state_t *callback_state,
-                                                bool has_transport_filter,
-                                                const _z_info_transport_t *transport_filter) {
-    if (callback_state == NULL || callback_state->_closure.call == NULL) {
-        return;
-    }
-    _z_closure_link_event_t *callback = &callback_state->_closure;
-
-    _z_transport_t *transport = &session->_tp;
-    _z_transport_common_t *transport_common = _z_transport_get_common(transport);
-    if (transport_common != NULL) {
-        _z_transport_peer_mutex_lock(transport_common);
-    }
-
-    switch (transport->_type) {
-        case _Z_TRANSPORT_UNICAST_TYPE: {
-            _z_transport_peer_unicast_slist_t *curr = transport->_transport._unicast._peers;
-            for (; curr != NULL; curr = _z_transport_peer_unicast_slist_next(curr)) {
-                _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_slist_value(curr);
-                if (!_z_connectivity_dispatch_link_put_for_peer(callback, transport_common, &peer->common, false,
-                                                                has_transport_filter, transport_filter)) {
-                    break;
-                }
-            }
-            break;
-        }
-        case _Z_TRANSPORT_MULTICAST_TYPE:
-        case _Z_TRANSPORT_RAWETH_TYPE: {
-            _z_transport_peer_multicast_slist_t *curr = transport->_transport._multicast._peers;
-            for (; curr != NULL; curr = _z_transport_peer_multicast_slist_next(curr)) {
-                _z_transport_peer_multicast_t *peer = _z_transport_peer_multicast_slist_value(curr);
-                if (!_z_connectivity_dispatch_link_put_for_peer(callback, transport_common, &peer->common, true,
-                                                                has_transport_filter, transport_filter)) {
-                    break;
-                }
-            }
-            break;
-        }
-        default:
-            break;
-    }
-
-    if (transport_common != NULL) {
-        _z_transport_peer_mutex_unlock(transport_common);
-    }
 }
 
 bool _z_transport_events_listener_check(const _z_transport_events_listener_t *listener) {
@@ -477,15 +358,19 @@ void z_link_events_listener_options_default(z_link_events_listener_options_t *op
     options->transport = NULL;
 }
 
+static void _z_info_transport_to_event_wrapper(_z_info_transport_t *transport, void *context) {
+    _z_info_transport_event_t event = {0};
+    event.kind = Z_SAMPLE_KIND_PUT;
+    event.transport = *transport;
+    _z_closure_transport_event_t *closure = (_z_closure_transport_event_t *)context;
+    closure->call(&event, closure->context);
+}
+
 z_result_t z_declare_transport_events_listener(const z_loaned_session_t *zs,
                                                z_owned_transport_events_listener_t *listener,
                                                z_moved_closure_transport_event_t *callback,
                                                const z_transport_events_listener_options_t *options) {
     listener->_val = _z_transport_events_listener_null();
-
-    if (zs == NULL || _Z_RC_IS_NULL(zs)) {
-        _Z_ERROR_RETURN(_Z_ERR_SESSION_CLOSED);
-    }
 
     z_transport_events_listener_options_t opt;
     z_transport_events_listener_options_default(&opt);
@@ -512,72 +397,37 @@ z_result_t z_declare_transport_events_listener(const z_loaned_session_t *zs,
     *listener_state = (_z_connectivity_transport_listener_t){._callback = callback_rc};
 
     _z_session_t *session = _Z_RC_IN_VAL(zs);
-    _z_transport_common_t *locked_transport_common = NULL;
-    z_result_t ret = _Z_RES_OK;
-    size_t id = 0;
-    bool listener_registered = false;
-    if (opt.history) {
-        locked_transport_common = _z_transport_get_common(&session->_tp);
-        if (locked_transport_common != NULL) {
-            _z_transport_peer_mutex_lock(locked_transport_common);
-        }
-    }
-
-    if (opt.history) {
-        _z_void_rc_t callback_snapshot = _z_void_rc_clone(&callback_rc);
-        if (_Z_RC_IS_NULL(&callback_snapshot)) {
-            ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-            goto exit;
-        }
-
-        _z_connectivity_transport_cb_state_t *callback_state =
-            (_z_connectivity_transport_cb_state_t *)callback_snapshot._val;
-        _z_connectivity_replay_transport_history(session, callback_state);
-        _z_void_rc_drop(&callback_snapshot);
-    }
-
-    ret = _z_session_mutex_lock_if_open(session);
-    if (ret != _Z_RES_OK) {
-        goto exit;
-    }
-    id = session->_connectivity_next_listener_id++;
+    _Z_CLEAN_RETURN_IF_ERR(_z_session_mutex_lock_if_open(session),
+                           _z_connectivity_transport_listener_clear(listener_state);
+                           z_free(listener_state); _z_sync_group_drop(&callback_drop_sync_group));
+    size_t id = session->_connectivity_next_listener_id++;
     if (_z_connectivity_transport_listener_intmap_insert(&session->_connectivity_transport_event_listeners, id,
                                                          listener_state) == NULL) {
         _z_session_mutex_unlock(session);
-        ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-        goto exit;
-    }
-    listener_registered = true;
-    _z_session_mutex_unlock(session);
-
-    _z_session_weak_t weak = _z_session_rc_clone_as_weak(zs);
-    if (_Z_RC_IS_NULL(&weak)) {
-        _z_session_mutex_lock(session);
-        _z_connectivity_transport_listener_intmap_remove(&session->_connectivity_transport_event_listeners, id);
-        _z_session_mutex_unlock(session);
-        listener_registered = false;
-        listener_state = NULL;
-        ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-        goto exit;
-    }
-
-    listener->_val = (_z_transport_events_listener_t){
-        ._id = id,
-        ._session = weak,
-        ._callback_drop_sync_group = callback_drop_sync_group,
-    };
-    callback_drop_sync_group = _z_sync_group_null();
-
-exit:
-    if (!listener_registered && listener_state != NULL) {
         _z_connectivity_transport_listener_clear(listener_state);
         z_free(listener_state);
+        _z_sync_group_drop(&callback_drop_sync_group);
+        return _Z_ERR_SYSTEM_OUT_OF_MEMORY;
     }
-    if (locked_transport_common != NULL) {
-        _z_transport_peer_mutex_unlock(locked_transport_common);
+    listener->_val = (_z_transport_events_listener_t){
+        ._id = id,
+        ._session = _z_session_rc_clone_as_weak(zs),
+        ._callback_drop_sync_group = callback_drop_sync_group,
+    };
+
+    if (opt.history) {
+        _Z_CLEAN_RETURN_IF_ERR(_z_transport_manager_lock(&session->_transport_manager),
+                               _z_session_mutex_unlock(session);
+                               _z_transport_events_listener_drop(&listener->_val));
+        _z_connectivity_transport_cb_state_t *callback_state = (_z_connectivity_transport_cb_state_t *)callback_rc._val;
+        _z_transport_manager_fetch_transports(&session->_transport_manager, _z_info_transport_to_event_wrapper,
+                                              &callback_state->_closure);
+        _z_transport_manager_unlock(&session->_transport_manager);
     }
-    _z_sync_group_drop(&callback_drop_sync_group);
-    return ret;
+    // Note: we may receive an extra new transport event declaration which happened while
+    // we were replaying history prior to acquiring the transport lock.
+    _z_session_mutex_unlock(session);
+    return _Z_RES_OK;
 }
 
 z_result_t z_declare_background_transport_events_listener(const z_loaned_session_t *zs,
@@ -595,14 +445,18 @@ z_result_t z_undeclare_transport_events_listener(z_moved_transport_events_listen
     return ret;
 }
 
+static void _z_info_link_to_event_wrapper(_z_info_link_t *link, void *context) {
+    _z_info_link_event_t event = {0};
+    event.kind = Z_SAMPLE_KIND_PUT;
+    event.link = *link;
+    _z_closure_link_event_t *closure = (_z_closure_link_event_t *)context;
+    closure->call(&event, closure->context);
+}
+
 z_result_t z_declare_link_events_listener(const z_loaned_session_t *zs, z_owned_link_events_listener_t *listener,
                                           z_moved_closure_link_event_t *callback,
                                           z_link_events_listener_options_t *options) {
     listener->_val = _z_link_events_listener_null();
-
-    if (zs == NULL || _Z_RC_IS_NULL(zs)) {
-        _Z_ERROR_RETURN(_Z_ERR_SESSION_CLOSED);
-    }
 
     z_link_events_listener_options_t opt;
     z_link_events_listener_options_default(&opt);
@@ -622,25 +476,19 @@ z_result_t z_declare_link_events_listener(const z_loaned_session_t *zs, z_owned_
     bool has_transport_filter = false;
     _z_id_t transport_filter_zid = {0};
     bool transport_filter_is_multicast = false;
-    z_result_t ret = _Z_RES_OK;
 
     if (opt.transport != NULL) {
         if (!z_internal_transport_check(&opt.transport->_this)) {
-            ret = _Z_ERR_INVALID;
+            _z_void_rc_drop(&callback_rc);
+            _z_sync_group_drop(&callback_drop_sync_group);
+            return _Z_ERR_INVALID;
         } else {
             const z_loaned_transport_t *transport = z_transport_loan(&opt.transport->_this);
             has_transport_filter = true;
             transport_filter_zid = transport->_zid;
             transport_filter_is_multicast = transport->_is_multicast;
         }
-    }
-
-    z_transport_drop(opt.transport);
-
-    if (ret != _Z_RES_OK) {
-        _z_void_rc_drop(&callback_rc);
-        _z_sync_group_drop(&callback_drop_sync_group);
-        return ret;
+        z_transport_drop(opt.transport);
     }
 
     _z_connectivity_link_listener_t *listener_state =
@@ -659,73 +507,39 @@ z_result_t z_declare_link_events_listener(const z_loaned_session_t *zs, z_owned_
     };
 
     _z_session_t *session = _Z_RC_IN_VAL(zs);
-    _z_transport_common_t *locked_transport_common = NULL;
-    size_t id = 0;
-    bool listener_registered = false;
-    if (opt.history) {
-        locked_transport_common = _z_transport_get_common(&session->_tp);
-        if (locked_transport_common != NULL) {
-            _z_transport_peer_mutex_lock(locked_transport_common);
-        }
-    }
-
-    if (opt.history) {
-        _z_void_rc_t callback_snapshot = _z_void_rc_clone(&callback_rc);
-        if (_Z_RC_IS_NULL(&callback_snapshot)) {
-            ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-            goto exit;
-        }
-
-        _z_info_transport_t transport_filter = {0};
-        transport_filter._zid = transport_filter_zid;
-        transport_filter._is_multicast = transport_filter_is_multicast;
-        _z_connectivity_link_cb_state_t *callback_state = (_z_connectivity_link_cb_state_t *)callback_snapshot._val;
-        _z_connectivity_replay_link_history(session, callback_state, has_transport_filter, &transport_filter);
-        _z_void_rc_drop(&callback_snapshot);
-    }
-
-    ret = _z_session_mutex_lock_if_open(session);
-    if (ret != _Z_RES_OK) {
-        goto exit;
-    }
-    id = session->_connectivity_next_listener_id++;
+    _Z_CLEAN_RETURN_IF_ERR(_z_session_mutex_lock_if_open(session), _z_connectivity_link_listener_clear(listener_state);
+                           z_free(listener_state); _z_sync_group_drop(&callback_drop_sync_group));
+    size_t id = session->_connectivity_next_listener_id++;
     if (_z_connectivity_link_listener_intmap_insert(&session->_connectivity_link_event_listeners, id, listener_state) ==
         NULL) {
         _z_session_mutex_unlock(session);
-        ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-        goto exit;
-    }
-    listener_registered = true;
-    _z_session_mutex_unlock(session);
-
-    _z_session_weak_t weak = _z_session_rc_clone_as_weak(zs);
-    if (_Z_RC_IS_NULL(&weak)) {
-        _z_session_mutex_lock(session);
-        _z_connectivity_link_listener_intmap_remove(&session->_connectivity_link_event_listeners, id);
-        _z_session_mutex_unlock(session);
-        listener_registered = false;
-        listener_state = NULL;
-        ret = _Z_ERR_SYSTEM_OUT_OF_MEMORY;
-        goto exit;
-    }
-
-    listener->_val = (_z_link_events_listener_t){
-        ._id = id,
-        ._session = weak,
-        ._callback_drop_sync_group = callback_drop_sync_group,
-    };
-    callback_drop_sync_group = _z_sync_group_null();
-
-exit:
-    if (!listener_registered && listener_state != NULL) {
         _z_connectivity_link_listener_clear(listener_state);
         z_free(listener_state);
+        _z_sync_group_drop(&callback_drop_sync_group);
+        return _Z_ERR_SYSTEM_OUT_OF_MEMORY;
     }
-    if (locked_transport_common != NULL) {
-        _z_transport_peer_mutex_unlock(locked_transport_common);
+    listener->_val = (_z_link_events_listener_t){
+        ._id = id,
+        ._session = _z_session_rc_clone_as_weak(zs),
+        ._callback_drop_sync_group = callback_drop_sync_group,
+    };
+
+    if (opt.history) {
+        _z_info_transport_t transport_filter = {0};
+        transport_filter._zid = transport_filter_zid;
+        transport_filter._is_multicast = transport_filter_is_multicast;
+        _z_connectivity_link_cb_state_t *callback_state = (_z_connectivity_link_cb_state_t *)callback_rc._val;
+        _Z_CLEAN_RETURN_IF_ERR(_z_transport_manager_lock(&session->_transport_manager),
+                               _z_session_mutex_unlock(session);
+                               _z_link_events_listener_drop(&listener->_val));
+        _z_transport_manager_fetch_links(&session->_transport_manager, _z_info_link_to_event_wrapper,
+                                         &callback_state->_closure, has_transport_filter ? &transport_filter : NULL);
+        _z_transport_manager_unlock(&session->_transport_manager);
     }
-    _z_sync_group_drop(&callback_drop_sync_group);
-    return ret;
+    // Note: we may receive an extra new link event declaration which happened while
+    // we were replaying history prior to acquiring the transport lock.
+    _z_session_mutex_unlock(session);
+    return _Z_RES_OK;
 }
 
 z_result_t z_declare_background_link_events_listener(const z_loaned_session_t *zs,
@@ -743,57 +557,42 @@ z_result_t z_undeclare_link_events_listener(z_moved_link_events_listener_t *list
     return ret;
 }
 
-void _z_connectivity_peer_connected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer,
-                                    bool is_multicast, uint16_t mtu, bool is_streamed, bool is_reliable) {
+void _z_connectivity_peer_connected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer, uint16_t mtu,
+                                    bool is_streamed, bool is_reliable) {
     if (session == NULL || peer == NULL) {
         return;
     }
 
     _z_info_transport_event_t transport_event = {0};
+    bool is_multicast = !_z_string_view_is_empty(&peer->_mcast_group);
     transport_event.kind = Z_SAMPLE_KIND_PUT;
     _z_connectivity_transport_from_event_data(&transport_event.transport, peer, is_multicast);
     _z_connectivity_dispatch_transport_event(session, &transport_event);
 
     _z_info_link_event_t link_event = {0};
     link_event.kind = Z_SAMPLE_KIND_PUT;
-    if (_z_connectivity_link_fill(&link_event.link, peer, mtu, is_streamed, is_reliable) == _Z_RES_OK) {
-        _z_connectivity_dispatch_link_event(session, &link_event, is_multicast);
-    }
+    _z_connectivity_link_fill(&link_event.link, peer, mtu, is_streamed, is_reliable);
+    _z_connectivity_dispatch_link_event(session, &link_event);
     _z_connectivity_link_event_clear(&link_event);
 }
 
 void _z_connectivity_peer_disconnected(_z_session_t *session, const _z_connectivity_peer_event_data_t *peer,
-                                       bool is_multicast, uint16_t mtu, bool is_streamed, bool is_reliable) {
+                                       uint16_t mtu, bool is_streamed, bool is_reliable) {
     if (session == NULL || peer == NULL) {
         return;
     }
 
+    bool is_multicast = !_z_string_view_is_empty(&peer->_mcast_group);
     _z_info_link_event_t link_event = {0};
     link_event.kind = Z_SAMPLE_KIND_DELETE;
-    if (_z_connectivity_link_fill(&link_event.link, peer, mtu, is_streamed, is_reliable) == _Z_RES_OK) {
-        _z_connectivity_dispatch_link_event(session, &link_event, is_multicast);
-    }
+    _z_connectivity_link_fill(&link_event.link, peer, mtu, is_streamed, is_reliable);
+    _z_connectivity_dispatch_link_event(session, &link_event);
     _z_connectivity_link_event_clear(&link_event);
 
     _z_info_transport_event_t transport_event = {0};
     transport_event.kind = Z_SAMPLE_KIND_DELETE;
     _z_connectivity_transport_from_event_data(&transport_event.transport, peer, is_multicast);
     _z_connectivity_dispatch_transport_event(session, &transport_event);
-}
-
-void _z_connectivity_peer_disconnected_from_transport(_z_session_t *session, const _z_transport_common_t *transport,
-                                                      const _z_connectivity_peer_event_data_t *peer,
-                                                      bool is_multicast) {
-    if (peer == NULL) {
-        return;
-    }
-
-    uint16_t mtu = 0;
-    bool is_streamed = false;
-    bool is_reliable = false;
-    _z_transport_link_properties_from_transport(transport, &mtu, &is_streamed, &is_reliable);
-
-    _z_connectivity_peer_disconnected(session, peer, is_multicast, mtu, is_streamed, is_reliable);
 }
 
 #endif

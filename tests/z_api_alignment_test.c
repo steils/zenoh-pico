@@ -173,13 +173,13 @@ int main(int argc, char **argv) {
     assert_eq(strncmp(_ret_cstr, argv[1], strlen(_ret_cstr)), 0);
 #endif
 
+#if Z_FEATURE_SCOUTING == 1
     z_owned_config_t _ret_sconfig;
     z_config_default(&_ret_sconfig);
     assert(z_internal_check(_ret_sconfig));
 
     printf("Ok\n");
     z_sleep_s(SLEEP);
-
     printf("Testing Scouting...");
     z_owned_closure_hello_t _ret_closure_hello;
     z_closure(&_ret_closure_hello, hello_handler, NULL, NULL);
@@ -191,6 +191,7 @@ int main(int argc, char **argv) {
     z_sleep_ms(_scouting_timeout);
     printf("Ok\n");
     z_sleep_s(SLEEP);
+#endif
 
     z_owned_session_t s1;
     z_open(&s1, z_move(_ret_config), NULL);

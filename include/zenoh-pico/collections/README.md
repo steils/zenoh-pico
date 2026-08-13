@@ -738,20 +738,46 @@ maximum size — no heap allocation. Supports O(1) insertion and removal at both
 | `_ZP_STATIC_DEQUE_TEMPLATE_ELEM_DESTROY_FN(x)` |    ❌    | no-op                      | Destroy one element.                |
 | `_ZP_STATIC_DEQUE_TEMPLATE_ELEM_MOVE_FN(d,s)`  |    ❌    | `*d = *s`                  | Move one element.                   |
 
+### Generated types
+
+```c
+typedef struct NAME_t {
+    ELEM_TYPE _buffer[SIZE];
+    size_t    _start;
+    size_t    _size;
+} NAME_t;
+
+typedef ELEM_TYPE NAME_elem_t;  // element alias (required by algorithms macros)
+typedef size_t    NAME_iter_t;  // iterator — a logical index in front-to-back order
+```
+
 ### API
 
-| Function                                         | Description                                                            |
-| ------------------------------------------------ | ---------------------------------------------------------------------- |
-| `NAME_t NAME_new(void)`                          | Return a new (zero-initialised) empty deque.                           |
-| `size_t NAME_size(const NAME_t *d)`              | Number of stored elements.                                             |
-| `bool NAME_is_empty(const NAME_t *d)`            | `true` if empty.                                                       |
-| `bool NAME_push_back(NAME_t *d, ELEM_TYPE *e)`   | Move `*e` to the back. `false` if full.                                |
-| `bool NAME_push_front(NAME_t *d, ELEM_TYPE *e)`  | Move `*e` to the front. `false` if full.                               |
-| `bool NAME_pop_back(NAME_t *d, ELEM_TYPE *out)`  | Remove from the back (move to `out`, else destroy). `false` if empty.  |
-| `bool NAME_pop_front(NAME_t *d, ELEM_TYPE *out)` | Remove from the front (move to `out`, else destroy). `false` if empty. |
-| `ELEM_TYPE *NAME_back(NAME_t *d)`                | Pointer to the back element, or `NULL`.                                |
-| `ELEM_TYPE *NAME_front(NAME_t *d)`               | Pointer to the front element, or `NULL`.                               |
-| `void NAME_destroy(NAME_t *d)`                   | Destroy all elements and reset to empty.                               |
+Iteration visits elements in **front-to-back order** (logical order, transparently
+handling the circular-buffer wrap-around), so the deque plugs into the
+`algorithms_template.h` macros (`_ZP_FOREACH`, `_ZP_FIND`, `_ZP_REMOVE_ALL`, …).
+
+| Function                                                                               | Description                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NAME_t NAME_new(void)`                                                                | Return a new (zero-initialised) empty deque.                                                                                                                                                                                                                                    |
+| `size_t NAME_size(const NAME_t *d)`                                                    | Number of stored elements.                                                                                                                                                                                                                                                      |
+| `bool NAME_is_empty(const NAME_t *d)`                                                  | `true` if empty.                                                                                                                                                                                                                                                                |
+| `bool NAME_push_back(NAME_t *d, ELEM_TYPE *e)`                                         | Move `*e` to the back. `false` if full.                                                                                                                                                                                                                                         |
+| `bool NAME_push_front(NAME_t *d, ELEM_TYPE *e)`                                        | Move `*e` to the front. `false` if full.                                                                                                                                                                                                                                        |
+| `bool NAME_pop_back(NAME_t *d, ELEM_TYPE *out)`                                        | Remove from the back (move to `out`, else destroy). `false` if empty.                                                                                                                                                                                                           |
+| `bool NAME_pop_front(NAME_t *d, ELEM_TYPE *out)`                                       | Remove from the front (move to `out`, else destroy). `false` if empty.                                                                                                                                                                                                          |
+| `ELEM_TYPE *NAME_back(NAME_t *d)`                                                      | Pointer to the back element, or `NULL`.                                                                                                                                                                                                                                         |
+| `ELEM_TYPE *NAME_front(NAME_t *d)`                                                     | Pointer to the front element, or `NULL`.                                                                                                                                                                                                                                        |
+| `NAME_elem_t *NAME_at(NAME_t *d, NAME_iter_t i)`                                       | Pointer to element at logical position `i`. UB if `i >= size`.                                                                                                                                                                                                                  |
+| `const NAME_elem_t *NAME_const_at(const NAME_t *d, NAME_iter_t i)`                     | Const variant of `at`.                                                                                                                                                                                                                                                          |
+| `NAME_elem_t *NAME_get(NAME_t *d, NAME_iter_t i)`                                      | Bounds-checked variant of `at`; returns `NULL` if `i >= size`.                                                                                                                                                                                                                  |
+| `const NAME_elem_t *NAME_const_get(const NAME_t *d, NAME_iter_t i)`                    | Const variant of `get`.                                                                                                                                                                                                                                                         |
+| `NAME_iter_t NAME_begin(const NAME_t *d)`                                              | First logical index (always `0`).                                                                                                                                                                                                                                               |
+| `NAME_iter_t NAME_end(const NAME_t *d)`                                                | One-past-last index (equal to `size`).                                                                                                                                                                                                                                          |
+| `NAME_iter_t NAME_iter_next(const NAME_t *d, NAME_iter_t i)`                           | Advance the iterator by one.                                                                                                                                                                                                                                                    |
+| `void NAME_remove_at(NAME_t *d, NAME_iter_t i, ELEM_TYPE *out, NAME_iter_t *next_idx)` | Remove element at `i` (move to `out` if non-`NULL`, else destroy), shifting the shorter side to **preserve order**. If `next_idx` is non-`NULL` it is set to the next iterator to visit (`i`, or `end` when `i` was last), so it composes with `_ZP_REMOVE`. UB if `i >= size`. |
+| `bool NAME_swap_remove(NAME_t *d, NAME_iter_t i, ELEM_TYPE *out)`                      | O(1) removal that moves the back element into slot `i`; **does not** preserve order. Returns `false` if `i >= size`.                                                                                                                                                            |
+| `void NAME_destroy(NAME_t *d)`                                                         | Destroy all elements and reset to empty.                                                                                                                                                                                                                                        |
 
 Use it as a **FIFO queue** (`push_back` + `pop_front`) or a **LIFO stack**
 (`push_back` + `pop_back`).
@@ -770,6 +796,29 @@ idq_push_back(&d, &a);   // [1]
 idq_push_front(&d, &b);  // [2, 1]
 int out;
 idq_pop_front(&d, &out); // out == 2, d == [1]
+idq_destroy(&d);
+```
+
+### Example — iteration and `_ZP_REMOVE`
+
+```c
+#include "zenoh-pico/collections/algorithms_template.h"
+
+#define _ZP_STATIC_DEQUE_TEMPLATE_ELEM_TYPE int
+#define _ZP_STATIC_DEQUE_TEMPLATE_NAME      idq
+#define _ZP_STATIC_DEQUE_TEMPLATE_SIZE      8
+#include "zenoh-pico/collections/static_deque_template.h"
+
+idq_t d = idq_new();
+for (int i = 0; i < 6; i++) idq_push_back(&d, &i);  // [0 1 2 3 4 5]
+
+// Remove all even numbers, preserving order:
+_ZP_REMOVE_ALL(idq, &d, (*_ % 2 == 0));             // [1 3 5]
+
+// Iterate in front-to-back order:
+for (idq_iter_t it = idq_begin(&d); it != idq_end(&d); it = idq_iter_next(&d, it)) {
+    printf("%d ", *idq_get(&d, it));                // 1 3 5
+}
 idq_destroy(&d);
 ```
 
@@ -793,26 +842,54 @@ element, per the comparator, is at the top).
 | `_ZP_STATIC_PQUEUE_TEMPLATE_ELEM_MOVE_FN(d,s)`  |    ❌    | `*d = *s`                  | Move one element.                                                                                                                     |
 | `_ZP_STATIC_PQUEUE_TEMPLATE_CMP_CTX_TYPE`       |    ❌    | (none)                     | Optional context type; when defined, the comparator signature becomes `(a, b, ctx_ptr)` and a context pointer is stored in the queue. |
 
-### API
-
-| Function                                      | Description                                                          |
-| --------------------------------------------- | -------------------------------------------------------------------- |
-| `NAME_t NAME_new(void)`                       | Return a new (zero-initialised) empty queue.                         |
-| `NAME_t NAME_new_with_ctx(CTX_TYPE *ctx)`     | *(context builds only)* New queue carrying comparator context `ctx`. |
-| `void NAME_set_ctx(NAME_t *q, CTX_TYPE *ctx)` | *(context builds only)* Replace the stored context pointer.          |
-| `size_t NAME_size(const NAME_t *q)`           | Number of stored elements.                                           |
-| `bool NAME_is_empty(const NAME_t *q)`         | `true` if empty.                                                     |
-| `ELEM_TYPE *NAME_peek(NAME_t *q)`             | Pointer to the top (highest-priority) element, or `NULL`.            |
-| `bool NAME_push(NAME_t *q, ELEM_TYPE *e)`     | Move `*e` in and sift up. `false` if full.                           |
-| `bool NAME_pop(NAME_t *q, ELEM_TYPE *out)`    | Move the top element into `*out` and re-heapify. `false` if empty.   |
-| `void NAME_destroy(NAME_t *q)`                | Destroy all elements and reset to empty.                             |
-
-> `NAME_sift_up` / `NAME_sift_down` are generated as internal heap helpers; prefer
-> `push` / `pop`.
-
-### Example — min-heap
+### Generated types
 
 ```c
+typedef struct NAME_t {
+    ELEM_TYPE _buffer[SIZE];
+    size_t    _size;
+    // CTX_TYPE *_cmp_ctx;  // present only when CMP_CTX_TYPE is defined
+} NAME_t;
+
+typedef ELEM_TYPE NAME_elem_t;  // element alias (required by algorithms macros)
+typedef size_t    NAME_iter_t;  // iterator — a plain index into the heap buffer
+```
+
+### API
+
+Iteration visits elements in heap-buffer order, which is **not** sorted. Use it
+when you need to inspect or conditionally remove elements without fully draining the
+queue.
+
+| Function                                                                                | Description                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `void NAME_init(NAME_t *q)`                                                             | Zero-initialise an empty queue in place.                                                                                                                                                                                                                                                                                                             |
+| `NAME_t NAME_new(void)`                                                                 | Return a new (zero-initialised) empty queue.                                                                                                                                                                                                                                                                                                         |
+| `void NAME_init_with_ctx(NAME_t *q, CTX_TYPE *ctx)`                                     | *(context builds only)* Zero-initialise a queue in place and store comparator context `ctx`.                                                                                                                                                                                                                                                         |
+| `NAME_t NAME_new_with_ctx(CTX_TYPE *ctx)`                                               | *(context builds only)* New queue carrying comparator context `ctx`.                                                                                                                                                                                                                                                                                 |
+| `void NAME_set_ctx(NAME_t *q, CTX_TYPE *ctx)`                                           | *(context builds only)* Replace the stored context pointer.                                                                                                                                                                                                                                                                                          |
+| `size_t NAME_size(const NAME_t *q)`                                                     | Number of stored elements.                                                                                                                                                                                                                                                                                                                           |
+| `bool NAME_is_empty(const NAME_t *q)`                                                   | `true` if empty.                                                                                                                                                                                                                                                                                                                                     |
+| `ELEM_TYPE *NAME_peek(NAME_t *q)`                                                       | Pointer to the top (highest-priority) element, or `NULL`.                                                                                                                                                                                                                                                                                            |
+| `bool NAME_push(NAME_t *q, ELEM_TYPE *e)`                                               | Move `*e` in and sift up. `false` if full.                                                                                                                                                                                                                                                                                                           |
+| `bool NAME_pop(NAME_t *q, ELEM_TYPE *out)`                                              | Move the top element into `*out` and re-heapify. `false` if empty.                                                                                                                                                                                                                                                                                   |
+| `NAME_elem_t *NAME_at(NAME_t *q, NAME_iter_t i)`                                        | Pointer to element at `i`. UB if `i >= size`.                                                                                                                                                                                                                                                                                                        |
+| `const NAME_elem_t *NAME_const_at(const NAME_t *q, NAME_iter_t i)`                      | Const variant of `at`.                                                                                                                                                                                                                                                                                                                               |
+| `NAME_elem_t *NAME_get(NAME_t *q, NAME_iter_t i)`                                       | Bounds-checked variant of `at`; returns `NULL` if `i >= size`.                                                                                                                                                                                                                                                                                       |
+| `const NAME_elem_t *NAME_const_get(const NAME_t *q, NAME_iter_t i)`                     | Const variant of `get`.                                                                                                                                                                                                                                                                                                                              |
+| `NAME_iter_t NAME_begin(const NAME_t *q)`                                               | First index (always `0`).                                                                                                                                                                                                                                                                                                                            |
+| `NAME_iter_t NAME_end(const NAME_t *q)`                                                 | One-past-last index (equal to `size`).                                                                                                                                                                                                                                                                                                               |
+| `NAME_iter_t NAME_iter_next(const NAME_t *q, NAME_iter_t i)`                            | Advance the iterator by one.                                                                                                                                                                                                                                                                                                                         |
+| `bool NAME_remove_at(NAME_t *q, NAME_iter_t i, ELEM_TYPE *out, NAME_iter_t *next_idx)`  | Remove element at `i` (move to `out` if non-`NULL`, else destroy) and re-heapify. If `next_idx` is non-`NULL`, it is set to the next iterator to visit — the replacement may sift **up** to a position `< i`, in which case `*next_idx` is set to that smaller position so that `_ZP_REMOVE` does not miss it. Returns `false` if `i >= size`.       |
+| `void NAME_destroy(NAME_t *q)`                                                          | Destroy all elements and reset to empty.                                                                                                                                                                                                                                                                                                             |
+
+> `NAME_sift_up` / `NAME_sift_down` are internal heap helpers; prefer `push` / `pop` / `remove_at`.
+
+### Example — min-heap with iteration and `_ZP_REMOVE`
+
+```c
+#include "zenoh-pico/collections/algorithms_template.h"
+
 static inline int int_cmp(const int *a, const int *b) { return (*a > *b) - (*a < *b); }
 
 #define _ZP_STATIC_PQUEUE_TEMPLATE_ELEM_TYPE     int
@@ -822,10 +899,20 @@ static inline int int_cmp(const int *a, const int *b) { return (*a > *b) - (*a <
 #include "zenoh-pico/collections/static_pqueue_template.h"
 
 intpq_t pq = intpq_new();
-int vals[] = {5, 1, 3};
-for (int i = 0; i < 3; i++) intpq_push(&pq, &vals[i]);
+int vals[] = {5, 1, 8, 3, 2, 7};
+for (int i = 0; i < 6; i++) intpq_push(&pq, &vals[i]);
+
+// Remove all even numbers without draining the queue:
+_ZP_REMOVE_ALL(intpq, &pq, (*_ % 2 == 0));
+
+// Iterate in storage order (not priority order):
+for (intpq_iter_t it = intpq_begin(&pq); it != intpq_end(&pq); it = intpq_iter_next(&pq, it)) {
+    printf("%d ", *intpq_at(&pq, it));
+}
+
+// Pop in priority order:
 int out;
-intpq_pop(&pq, &out);   // out == 1 (smallest first)
+while (intpq_pop(&pq, &out)) printf("%d ", out);  // 1 3 5 7
 intpq_destroy(&pq);
 ```
 
@@ -1002,8 +1089,10 @@ NAME_iter_t  NAME_iter_next(const NAME_t *, NAME_iter_t)
 NAME_elem_t *NAME_at(NAME_t *, NAME_iter_t)            // + NAME_const_at
 ```
 
-In practice this means the **vectors**, **bit vectors**, **hash maps** and **hash sets**.
-The deque, priority queue and variant do not expose iterators and are not supported.
+In practice this means the **vectors**, **bit vectors**, **hash maps**, **hash sets**,
+**static priority queues** (`static_pqueue_template.h` — iteration is in heap-storage order,
+not priority order), and **static deques** (`static_deque_template.h` — iteration is in
+front-to-back order). The variant does not expose iterators and is not supported.
 
 Every macro takes the container's base name (`collection_name`, e.g. `intvec`) as its
 first argument and a pointer to the instance (`collection_ptr`) as its second, so it
@@ -1035,19 +1124,21 @@ calls. Include the header next to the container instantiation:
 
 ### Macros
 
-| Macro                                                 | Purpose                                                                                                                                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `_ZP_FOREACH(name, ptr, var)`                         | Loop over every element; `var` (an `elem_t *`) points to each in turn. Use a block body `{ ... }`.                                                                                                     |
-| `_ZP_CONST_FOREACH(name, ptr, var)`                   | `const` counterpart of `_ZP_FOREACH` (`var` is `const elem_t *`).                                                                                                                                      |
-| `_ZP_FOREACH_VAL(name, ptr, var)`                     | Loop over hash-map **values**; `var` (a `val_t *`) points to each value.                                                                                                                               |
-| `_ZP_CONST_FOREACH_VAL(name, ptr, var)`               | `const` counterpart of `_ZP_FOREACH_VAL`.                                                                                                                                                              |
-| `_ZP_FIND(name, ptr, var, predicate)`                 | Set `var` to the first element matching `predicate` (with `_` bound to the element), or `NULL` if none.                                                                                                |
-| `_ZP_CONST_FIND(name, ptr, var, predicate)`           | `const` counterpart of `_ZP_FIND`.                                                                                                                                                                     |
-| `_ZP_FIND_VAL(name, ptr, var, predicate)`             | Set `var` to the first **value** matching `predicate` (`_` bound to `val_t *`), or `NULL`.                                                                                                             |
-| `_ZP_CONST_FIND_VAL(name, ptr, var, predicate)`       | `const` counterpart of `_ZP_FIND_VAL`.                                                                                                                                                                 |
-| `_ZP_IT_FIND(name, ptr, begin, end, predicate)`       | Advance the iterator `begin` to the first element in the range `[begin, end)` matching `predicate` (`_` bound to the element); leaves `begin == end` if none. `begin`/`end` are `NAME_iter_t` lvalues. |
-| `_ZP_CONST_IT_FIND(name, ptr, begin, end, predicate)` | `const` counterpart of `_ZP_IT_FIND`.                                                                                                                                                                  |
-| `_ZP_REMOVE(name, ptr, predicate)`                    | Remove every element matching `predicate` (`_` bound to the element), destroying it in place. Requires the container to provide `NAME_remove_at` (hash maps, hash sets, vectors and bit vectors).      |
+| Macro                                                 | Purpose                                                                                                                                                                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `_ZP_IT_FOREACH(name, ptr, iter)`                     | Loop over every iterator; `iter` (a `NAME_iter_t`). Use when you need walk through collection using iterators (e.g., to pass to `NAME_at` function). Use a block body `{ ... }`.                        |
+| `_ZP_FOREACH(name, ptr, var)`                         | Loop over every element; `var` (an `elem_t *`) points to each in turn. Use a block body `{ ... }`.                                                                                                      |
+| `_ZP_CONST_FOREACH(name, ptr, var)`                   | `const` counterpart of `_ZP_FOREACH` (`var` is `const elem_t *`).                                                                                                                                       |
+| `_ZP_FOREACH_VAL(name, ptr, var)`                     | Loop over hash-map **values**; `var` (a `val_t *`) points to each value.                                                                                                                                |
+| `_ZP_CONST_FOREACH_VAL(name, ptr, var)`               | `const` counterpart of `_ZP_FOREACH_VAL`.                                                                                                                                                               |
+| `_ZP_FIND(name, ptr, var, predicate)`                 | Set `var` to the first element matching `predicate` (with `_` bound to the element), or `NULL` if none.                                                                                                 |
+| `_ZP_CONST_FIND(name, ptr, var, predicate)`           | `const` counterpart of `_ZP_FIND`.                                                                                                                                                                      |
+| `_ZP_FIND_VAL(name, ptr, var, predicate)`             | Set `var` to the first **value** matching `predicate` (`_` bound to `val_t *`), or `NULL`.                                                                                                              |
+| `_ZP_CONST_FIND_VAL(name, ptr, var, predicate)`       | `const` counterpart of `_ZP_FIND_VAL`.                                                                                                                                                                  |
+| `_ZP_IT_FIND(name, ptr, begin, end, predicate)`       | Advance the iterator `begin` to the first element in the range `[begin, end)` matching `predicate` (`_` bound to the element); leaves `begin == end` if none. `begin`/`end` are `NAME_iter_t` lvalues.  |
+| `_ZP_CONST_IT_FIND(name, ptr, begin, end, predicate)` | `const` counterpart of `_ZP_IT_FIND`.                                                                                                                                                                   |
+| `_ZP_REMOVE_ALL(name, ptr, predicate)`                | Remove every element matching `predicate` (`_` bound to the element), destroying it in place. Requires the container to provide `NAME_remove_at` (hash maps, hash sets, vectors and bit vectors).       |
+| `_ZP_REMOVE_ONE(name, ptr, predicate)`                | Remove at most one element matching `predicate` (`_` bound to the element), destroying it in place. Requires the container to provide `NAME_remove_at` (hash maps, hash sets, vectors and bit vectors). |
 
 > **Notes**
 >
@@ -1109,13 +1200,13 @@ _ZP_FOREACH_VAL (u32map, &m, val) {
 const uint32_t *fv = NULL;
 _ZP_CONST_FIND_VAL(u32map, &m, fv, *_ == 10);   // first entry whose val == 10
 
-_ZP_REMOVE(u32map, &m, _->key % 2 != 0);        // drop all odd keys
+_ZP_REMOVE_ALL(u32map, &m, _->key % 2 != 0);        // drop all odd keys
 ```
 
 **Erase matching elements from a vector (`_` is `int *`):**
 
 ```c
-_ZP_REMOVE(intvec, &v, *_ < 0);                 // drop all negative values
+_ZP_REMOVE_ALL(intvec, &v, *_ < 0);                 // drop all negative values
 ```
 
 ---
@@ -1132,11 +1223,12 @@ _ZP_REMOVE(intvec, &v, *_ < 0);                 // drop all negative values
 * **`hashset` (heap)** — unique-key set, unbounded, stable iterators; needs `malloc`.
 * **`static_hashmap`** — key→value lookup with a known maximum capacity; no `malloc`.
 * **`static_hashset`** — unique-key set with a known maximum capacity; no `malloc`.
-* **`static_deque`** — bounded FIFO/LIFO with O(1) push/pop at both ends; no `malloc`.
+* **`static_deque`** — bounded FIFO/LIFO with O(1) push/pop at both ends, plus
+  order-preserving `remove_at` / O(1) `swap_remove` and iteration; no `malloc`.
 * **`static_pqueue`** — bounded priority queue (binary heap); no `malloc`.
 * **`variant`** — one value out of several distinct types; no `malloc`.
-* **`algorithms`** — generic `foreach` / `find` / `remove` macros over vectors and
-  hash maps.
+* **`algorithms`** — generic `foreach` / `find` / `remove` macros over vectors,
+  hash maps, hash sets, static priority queues, and static deques.
 
 See the corresponding tests under `tests/` (e.g. `z_vector_template_test.c`,
 `z_static_bit_vector_template_test.c`, `z_hashmap_template_test.c`,

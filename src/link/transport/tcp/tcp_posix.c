@@ -191,7 +191,7 @@ static z_result_t _z_tcp_posix_listen(_z_sys_net_socket_t *sock, const _z_sys_ne
         }
         _Z_DEBUG("bind() successful for address %s", addr_str);
 
-        if (listen(sock->_fd, Z_LISTEN_MAX_CONNECTION_NB) < 0) {
+        if (listen(sock->_fd, Z_MAX_NUM_PEERS) < 0) {
             _Z_DEBUG("listen() failed for address %s: %s", addr_str, strerror(errno));
             if (it->ai_next == NULL) {
                 _Z_ERROR_LOG(_Z_ERR_GENERIC);
@@ -274,24 +274,6 @@ static size_t _z_tcp_posix_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t l
     return (size_t)rb;
 }
 
-static size_t _z_tcp_posix_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_tcp_posix_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n += rb;
-        pos = _z_ptr_u8_offset(pos, (ptrdiff_t)rb);
-    } while (n != len);
-
-    return n;
-}
-
 static size_t _z_tcp_posix_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
 #if defined(ZENOH_LINUX)
     return (size_t)send(sock._fd, ptr, len, MSG_NOSIGNAL);
@@ -321,10 +303,6 @@ z_result_t _z_tcp_accept(const _z_sys_net_socket_t *sock_in, _z_sys_net_socket_t
 void _z_tcp_close(_z_sys_net_socket_t *sock) { _z_tcp_posix_close(sock); }
 
 size_t _z_tcp_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) { return _z_tcp_posix_read(sock, ptr, len); }
-
-size_t _z_tcp_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    return _z_tcp_posix_read_exact(sock, ptr, len);
-}
 
 size_t _z_tcp_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     return _z_tcp_posix_write(sock, ptr, len);

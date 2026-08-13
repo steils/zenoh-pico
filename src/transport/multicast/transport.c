@@ -11,7 +11,7 @@
 // Contributors:
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 
-#include "zenoh-pico/transport/common/transport.h"
+#include "zenoh-pico/protocol/definitions/transport.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,189 +19,163 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "zenoh-pico/link/link.h"
-#include "zenoh-pico/transport/common/tx.h"
+#include "zenoh-pico/collections/algorithms_template.h"
+#include "zenoh-pico/link/multicast_link.h"
+#include "zenoh-pico/runtime/runtime.h"
+#include "zenoh-pico/transport/multicast/connectivity.h"
 #include "zenoh-pico/transport/multicast/transport.h"
-#include "zenoh-pico/transport/raweth/tx.h"
+#include "zenoh-pico/transport/multicast/tx.h"
+#include "zenoh-pico/transport/transport.h"
 #include "zenoh-pico/transport/utils.h"
 #include "zenoh-pico/utils/logging.h"
 
-#if Z_FEATURE_MULTICAST_TRANSPORT == 1 || Z_FEATURE_RAWETH_TRANSPORT == 1
+#if Z_FEATURE_MULTICAST_TRANSPORT == 1
 
-z_result_t _z_multicast_transport_create(_z_transport_t *zt, _z_link_t *zl,
-                                         _z_transport_multicast_establish_param_t *param) {
-    // Transport specific information
-    _z_transport_multicast_t *ztm = NULL;
-    switch (zl->_cap._transport) {
-        case Z_LINK_CAP_TRANSPORT_MULTICAST:
-            zt->_type = _Z_TRANSPORT_MULTICAST_TYPE;
-            ztm = &zt->_transport._multicast;
-            memset(ztm, 0, sizeof(_z_transport_multicast_t));
-            ztm->_send_f = _z_transport_tx_send_t_msg_wrapper;
-            break;
-        case Z_LINK_CAP_TRANSPORT_RAWETH:
-            zt->_type = _Z_TRANSPORT_RAWETH_TYPE;
-            ztm = &zt->_transport._raweth;
-            memset(ztm, 0, sizeof(_z_transport_multicast_t));
-            ztm->_send_f = _z_raweth_send_t_msg;
-            break;
-        default:
-            _Z_ERROR_RETURN(_Z_ERR_GENERIC);
-    }
-
-    // Initialize persistent address buffer
-    ztm->_zbuf_addr = _z_slice_alias_buf(ztm->_zbuf_addr_buf, sizeof(ztm->_zbuf_addr_buf));
-
-// Initialize batching data
-#if Z_FEATURE_BATCHING == 1
-    ztm->_common._batch_state = _Z_BATCHING_IDLE;
-    ztm->_common._batch_count = 0;
-#endif
-
-#if Z_FEATURE_MULTI_THREAD == 1
-    // Initialize the mutexes
-    _Z_RETURN_IF_ERR(_z_mutex_init(&ztm->_common._mutex_tx));
-    _Z_CLEAN_RETURN_IF_ERR(_z_mutex_rec_init(&ztm->_common._mutex_peer), _z_mutex_drop(&ztm->_common._mutex_tx));
-#endif  // Z_FEATURE_MULTI_THREAD == 1
-
-    uint16_t mtu = (zl->_mtu < Z_BATCH_MULTICAST_SIZE) ? zl->_mtu : Z_BATCH_MULTICAST_SIZE;
-    if ((_z_wbuf_init(&ztm->_common._wbuf, mtu, false) != _Z_RES_OK) ||
-        (_z_zbuf_init(&ztm->_common._zbuf, Z_BATCH_MULTICAST_SIZE) != _Z_RES_OK)) {
-#if Z_FEATURE_MULTI_THREAD == 1
-        _z_mutex_drop(&ztm->_common._mutex_tx);
-        _z_mutex_rec_drop(&ztm->_common._mutex_peer);
-#endif  // Z_FEATURE_MULTI_THREAD == 1
-
-        _z_wbuf_clear(&ztm->_common._wbuf);
-        _z_zbuf_clear(&ztm->_common._zbuf);
-        _Z_ERROR("Not enough memory to allocate transport buffers!");
-        _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
-    }
-
-    // Set default SN resolution
-    ztm->_common._sn_res = _z_sn_max(param->_seq_num_res);
-
-    // The initial SN at TX side
-    ztm->_common._sn_tx_reliable = param->_initial_sn_tx._val._plain._reliable;
-    ztm->_common._sn_tx_best_effort = param->_initial_sn_tx._val._plain._best_effort;
-
-    // Initialize peer list
-    ztm->_peers = _z_transport_peer_multicast_slist_new();
-
-    ztm->_common._lease = Z_TRANSPORT_LEASE;
-
-    // Notifiers
-    ztm->_common._transmitted = false;
-
-    // Transport link for multicast
-    ztm->_common._link = zl;
+z_result_t _z_multicast_transport_manager_create(_z_multicast_transport_manager_t *manager,
+                                                 _z_transport_manager_t *parent) {
+    memset(manager, 0, sizeof(_z_multicast_transport_manager_t));
+    manager->_parent = parent;
+    _z_multicast_transport_group_vec_init(&manager->_groups);
+    _z_address_to_multicast_transport_peer_hmap_init(&manager->_peers);
+    manager->_send_join_task_handle = _z_fut_handle_null();
+    _z_multicast_lease_pqueue_init_with_ctx(&manager->_lease_pqueue, &manager->_peers);
+    manager->_sn_res = _z_sn_modulo_mask(Z_SN_RESOLUTION);
     return _Z_RES_OK;
 }
 
-z_result_t _z_multicast_open_peer(_z_transport_multicast_establish_param_t *param, const _z_link_t *zl,
-                                  const _z_id_t *local_zid) {
+z_result_t _z_multicast_transport_manager_spawn_tasks(_z_multicast_transport_manager_t *manager) {
     z_result_t ret = _Z_RES_OK;
-
-    _z_zint_t initial_sn_tx = 0;
-    z_random_fill(&initial_sn_tx, sizeof(initial_sn_tx));
-    initial_sn_tx = initial_sn_tx & !_z_sn_modulo_mask(Z_SN_RESOLUTION);
-
-    _z_conduit_sn_list_t next_sn;
-    next_sn._is_qos = false;
-    next_sn._val._plain._best_effort = initial_sn_tx;
-    next_sn._val._plain._reliable = initial_sn_tx;
-
-    _z_id_t zid = *local_zid;
-    _z_transport_message_t jsm = _z_t_msg_make_join(Z_WHATAMI_PEER, Z_TRANSPORT_LEASE, zid, next_sn);
-
-    // Encode and send the message
-    _Z_DEBUG("Sending Z_JOIN message");
-    switch (zl->_cap._transport) {
-        case Z_LINK_CAP_TRANSPORT_MULTICAST:
-            ret = _z_link_send_t_msg(zl, &jsm, NULL);
-            break;
-        case Z_LINK_CAP_TRANSPORT_RAWETH:
-            ret = _z_raweth_link_send_t_msg(zl, &jsm);
-            break;
-        default:
-            _Z_ERROR_RETURN(_Z_ERR_GENERIC);
-    }
-
-    if (ret == _Z_RES_OK) {
-        param->_seq_num_res = jsm._body._join._seq_num_res;
-        param->_initial_sn_tx = next_sn;
+    if (!_z_multicast_transport_group_vec_is_empty(&manager->_groups)) {
+        _z_fut_t fut;
+        fut._fut_arg = manager;
+        fut._fut_fn = _z_multicast_transport_manager_send_join_task_fn;
+        fut._destroy_fn = NULL;
+        manager->_send_join_task_handle = _z_runtime_spawn(&manager->_parent->_session->_runtime, &fut);
+        if (_z_fut_handle_is_null(manager->_send_join_task_handle)) {
+            ret = _Z_ERR_FAILED_TO_SPAWN_TASK;
+            _Z_ERROR("Failed to spawn multicast transport send join task with error %d", ret);
+            return ret;
+        }
     }
     return ret;
 }
 
-z_result_t _z_multicast_open_client(_z_transport_multicast_establish_param_t *param, const _z_link_t *zl,
-                                    const _z_id_t *local_zid) {
-    _ZP_UNUSED(param);
-    _ZP_UNUSED(zl);
-    _ZP_UNUSED(local_zid);
-    _Z_ERROR_LOG(_Z_ERR_CONFIG_UNSUPPORTED_CLIENT_MULTICAST);
-    z_result_t ret = _Z_ERR_CONFIG_UNSUPPORTED_CLIENT_MULTICAST;
-    // @TODO: not implemented
-    return ret;
-}
-
-z_result_t _z_multicast_send_close(_z_transport_multicast_t *ztm, uint8_t reason, bool link_only) {
-    z_result_t ret = _Z_RES_OK;
-    // Send and clear message
-    _z_transport_message_t cm = _z_t_msg_make_close(reason, link_only);
-    ret = ztm->_send_f(&ztm->_common, &cm);
-    return ret;
-}
-
-z_result_t _z_multicast_transport_close(_z_transport_multicast_t *ztm, uint8_t reason) {
-    return _z_multicast_send_close(ztm, reason, false);
-}
-
-void _z_multicast_transport_clear(_z_transport_multicast_t *ztm) {
-    _z_transport_peer_multicast_slist_free(&ztm->_peers);
-    _z_transport_common_clear(
-        &ztm->_common);  // free common in the very end, as peers might access the link data in common while being freed
-    _z_slice_clear(&ztm->_zbuf_addr);
-}
-
+z_result_t _z_multicast_transport_manager_add_group(_z_multicast_transport_manager_t *manager,
+                                                    _z_multicast_link_t *link, _z_listen_listener_id_t locator_id) {
+    _z_multicast_transport_group_t group;
+    memset(&group, 0, sizeof(_z_multicast_transport_group_t));
+    group._parent = manager;
+    group._link = *link;
+    uint16_t mtu = _z_multicast_link_get_mtu(link);
+    mtu = mtu < Z_BATCH_MULTICAST_SIZE ? mtu : Z_BATCH_MULTICAST_SIZE;
+    z_random_fill(&group._sn_tx._reliable, sizeof(group._sn_tx._reliable));
+    group._sn_tx._reliable &= _z_sn_modulo_mask(Z_SN_RESOLUTION);
+    group._sn_tx._best_effort = group._sn_tx._reliable;
+    group._transmitted = false;
+    group._locator_id = locator_id;
+#if Z_FEATURE_BATCHING == 1
+    _Z_RETURN_IF_ERR(_z_wbuf_init(&group._tx_buffer, mtu, false));
+    _Z_CLEAN_RETURN_IF_ERR(_z_zbuf_init(&group._rx_buffer, mtu), _z_wbuf_clear(&group._tx_buffer));
 #else
+    _Z_RETURN_IF_ERR(_z_zbuf_init(&group._rx_buffer, mtu));
+#endif
 
-z_result_t _z_multicast_transport_create(_z_transport_t *zt, _z_link_t *zl,
-                                         _z_transport_multicast_establish_param_t *param) {
-    _ZP_UNUSED(zt);
-    _ZP_UNUSED(zl);
-    _ZP_UNUSED(param);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+    if (!_z_multicast_transport_group_vec_push_back(&manager->_groups, &group)) {
+        _z_multicast_transport_group_clear(&group);
+        _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
+    }
+    if (_z_multicast_transport_group_vec_size(&manager->_groups) == 1 &&
+        !_z_fut_handle_is_null(manager->_send_join_task_handle)) {
+        _Z_RETURN_IF_ERR(_z_runtime_resume_suspended_or_wakeup_sleeping_fut(&manager->_parent->_session->_runtime,
+                                                                            &manager->_send_join_task_handle));
+    }
+    return _Z_RES_OK;
+}
+void _z_multicast_transport_manager_close(_z_multicast_transport_manager_t *manager) {
+    _z_transport_message_t msg = _z_t_msg_make_close(_Z_CLOSE_REASON_GENERIC, false);
+    for (size_t i = 0; i < _z_multicast_transport_group_vec_size(&manager->_groups); i++) {
+        _z_multicast_transport_manager_send_t_msg_to_group(manager, &msg, i);
+    }
 }
 
-z_result_t _z_multicast_open_peer(_z_transport_multicast_establish_param_t *param, const _z_link_t *zl,
-                                  const _z_id_t *local_zid) {
-    _ZP_UNUSED(param);
-    _ZP_UNUSED(zl);
-    _ZP_UNUSED(local_zid);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+void _z_multicast_transport_manager_clear(_z_multicast_transport_manager_t *manager) {
+    if (!_z_fut_handle_is_null(manager->_send_join_task_handle)) {
+        _z_runtime_cancel_fut(&manager->_parent->_session->_runtime, &manager->_send_join_task_handle);
+        manager->_send_join_task_handle = _z_fut_handle_null();
+    }
+    _z_address_to_multicast_transport_peer_hmap_destroy(&manager->_peers);
+    _z_multicast_transport_group_vec_destroy(&manager->_groups);
+    _z_multicast_lease_pqueue_destroy(&manager->_lease_pqueue);
 }
 
-z_result_t _z_multicast_open_client(_z_transport_multicast_establish_param_t *param, const _z_link_t *zl,
-                                    const _z_id_t *local_zid) {
-    _ZP_UNUSED(param);
-    _ZP_UNUSED(zl);
-    _ZP_UNUSED(local_zid);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+z_result_t _z_multicast_transport_manager_close_peer(
+    _z_multicast_transport_manager_t *manager, _z_address_to_multicast_transport_peer_hmap_iter_t peer_id,
+    const _z_close_reason_t *opt_reason, _z_address_to_multicast_transport_peer_hmap_iter_t *opt_next_peer_id) {
+    _ZP_UNUSED(opt_reason);
+    _z_multicast_transport_peer_t *peer =
+        &_z_address_to_multicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
+    _ZP_UNUSED(peer);
+    _Z_INFO("Closing multicast peer " _Z_ID_PRINT_FORMAT " on group %zu", _Z_ID_PRINT_ARGS(&peer->_remote_zid),
+            (size_t)peer->_multicast_group);
+    _z_multicast_transport_manager_report_disconnected_event(manager, peer_id);
+    _ZP_REMOVE_ONE(_z_multicast_lease_pqueue, &manager->_lease_pqueue, *_ == peer_id);
+    _Z_RETURN_IF_ERR(_z_transport_manager_lock(manager->_parent));
+    _z_address_to_multicast_transport_peer_hmap_remove_at(&manager->_peers, peer_id, NULL, opt_next_peer_id);
+    _z_transport_manager_unlock(manager->_parent);
+    return _Z_RES_OK;
 }
 
-z_result_t _z_multicast_send_close(_z_transport_multicast_t *ztm, uint8_t reason, bool link_only) {
-    _ZP_UNUSED(ztm);
-    _ZP_UNUSED(reason);
-    _ZP_UNUSED(link_only);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+_z_fut_fn_result_t _z_multicast_transport_manager_send_join_task_fn(void *multicast_transport_manager,
+                                                                    _z_executor_t *executor) {
+    _ZP_UNUSED(executor);
+    _z_multicast_transport_manager_t *manager = (_z_multicast_transport_manager_t *)multicast_transport_manager;
+
+    if (_z_multicast_transport_group_vec_size(&manager->_groups) == 0) {
+        return _z_fut_fn_result_suspend();
+    }
+
+    z_result_t ret = _z_multicast_transport_manager_send_join(manager);
+    if (ret != _Z_RES_OK) {
+        _Z_ERROR("Failed to send JOIN message to multicast groups (err: %d)", ret);
+        return _z_fut_fn_result_ready();
+    }
+    return _z_fut_fn_result_wake_up_after(Z_JOIN_INTERVAL);
 }
 
-z_result_t _z_multicast_transport_close(_z_transport_multicast_t *ztm, uint8_t reason) {
-    _ZP_UNUSED(ztm);
-    _ZP_UNUSED(reason);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+const z_clock_t *_z_multicast_transport_manager_check_lease(_z_multicast_transport_manager_t *manager) {
+    z_clock_t now = z_clock_now();
+
+    while (!_z_multicast_lease_pqueue_is_empty(&manager->_lease_pqueue)) {
+        _z_address_to_multicast_transport_peer_hmap_iter_t peer_id =
+            *_z_multicast_lease_pqueue_peek(&manager->_lease_pqueue);
+        _z_multicast_transport_peer_t *peer =
+            &_z_address_to_multicast_transport_peer_hmap_at(&manager->_peers, peer_id)->val;
+        if (zp_clock_compare(&now, &peer->_lease_deadline) <= 0) {
+            break;
+        }
+        _z_close_reason_t reason = _Z_CLOSE_REASON_EXPIRED;
+        if (!peer->_received) {
+            _Z_INFO("Lease expired for multicast peer %zu, group %zu", (size_t)peer_id, (size_t)peer->_multicast_group);
+            z_result_t ret = _z_multicast_transport_manager_close_peer(manager, peer_id, &reason, NULL);
+            if (ret != _Z_RES_OK) {
+                _Z_ERROR("Failed to remove expired multicast peer %zu from group %zu", (size_t)peer_id,
+                         (size_t)peer->_multicast_group);
+                return NULL;
+            }
+        } else {
+            _z_multicast_lease_pqueue_pop(&manager->_lease_pqueue, NULL);
+            peer->_received = false;
+            peer->_lease_deadline = now;
+            z_clock_advance_ms(&peer->_lease_deadline, (unsigned long)peer->_lease_duration_ms);
+            _z_multicast_lease_pqueue_push(&manager->_lease_pqueue, &peer_id);
+        }
+    }
+
+    if (_z_multicast_lease_pqueue_is_empty(&manager->_lease_pqueue)) {
+        return NULL;
+    }
+    _z_address_to_multicast_transport_peer_hmap_iter_t next = *_z_multicast_lease_pqueue_peek(&manager->_lease_pqueue);
+    return &_z_address_to_multicast_transport_peer_hmap_at(&manager->_peers, next)->val._lease_deadline;
 }
 
-void _z_multicast_transport_clear(_z_transport_multicast_t *ztm) { _ZP_UNUSED(ztm); }
-#endif  // Z_FEATURE_MULTICAST_TRANSPORT == 1 || Z_FEATURE_RAWETH_TRANSPORT == 1
+#endif  // Z_FEATURE_MULTICAST_TRANSPORT == 1

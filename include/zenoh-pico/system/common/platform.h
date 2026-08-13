@@ -149,6 +149,7 @@ void z_random_fill(void *buf, size_t len);
  */
 void *z_malloc(size_t size);
 
+#if defined(_ZP_PLATFORM_HAS_REALLOC)
 /**
  * Reallocates the given memory block to a new size.
  *
@@ -160,6 +161,7 @@ void *z_malloc(size_t size);
  *   A pointer to the reallocated memory, or NULL if the reallocation fails.
  */
 void *z_realloc(void *ptr, size_t size);
+#endif
 
 /**
  * Frees the memory previously allocated by z_malloc or z_realloc.
@@ -431,6 +433,7 @@ z_clock_t z_clock_now(void);
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch);
 unsigned long zp_clock_elapsed_ms_since(z_clock_t *instant, z_clock_t *epoch);
 unsigned long zp_clock_elapsed_s_since(z_clock_t *instant, z_clock_t *epoch);
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r);
 
 /**
  * Returns the elapsed time in microseconds since a given clock time.

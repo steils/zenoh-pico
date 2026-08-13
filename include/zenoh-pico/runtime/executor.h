@@ -77,6 +77,13 @@ static inline _z_fut_fn_result_t _z_fut_fn_result_wake_up_after(unsigned long wa
     return result;
 }
 
+static inline _z_fut_fn_result_t _z_fut_fn_result_wake_up_at(const z_clock_t *wake_up_time) {
+    _z_fut_fn_result_t result;
+    result._status = _Z_FUT_STATUS_SLEEPING;
+    result._wake_up_time = *wake_up_time;
+    return result;
+}
+
 typedef struct _z_executor_t _z_executor_t;
 typedef _z_fut_fn_result_t (*_z_fut_fn_t)(void *arg, _z_executor_t *executor);
 typedef void (*_z_fut_destroy_fn_t)(void *arg);
@@ -240,6 +247,8 @@ _z_executor_status_t _z_executor_spin(_z_executor_t *executor);
 _z_fut_status_t _z_executor_get_fut_status(const _z_executor_t *executor, const _z_fut_handle_t *handle);
 bool _z_executor_cancel_fut(_z_executor_t *executor, const _z_fut_handle_t *handle);
 bool _z_executor_resume_suspended_fut(_z_executor_t *executor, const _z_fut_handle_t *handle);
+bool _z_executor_wakeup_sleeping_fut(_z_executor_t *executor, const _z_fut_handle_t *handle);
+bool _z_executor_resume_suspended_or_wakeup_sleeping_fut(_z_executor_t *executor, const _z_fut_handle_t *handle);
 
 #ifdef __cplusplus
 }

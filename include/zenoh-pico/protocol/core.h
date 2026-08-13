@@ -60,6 +60,12 @@ typedef size_t _z_zint_t;
 typedef struct {
     uint8_t id[ZENOH_ID_SIZE];
 } _z_id_t;
+
+#define _Z_ID_PRINT_FORMAT "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
+#define _Z_ID_PRINT_ARGS(x)                                                                                           \
+    (x)->id[15], (x)->id[14], (x)->id[13], (x)->id[12], (x)->id[11], (x)->id[10], (x)->id[9], (x)->id[8], (x)->id[7], \
+        (x)->id[6], (x)->id[5], (x)->id[4], (x)->id[3], (x)->id[2], (x)->id[1], (x)->id[0]
+
 extern const _z_id_t empty_id;
 uint8_t _z_id_len(_z_id_t id);
 static inline bool _z_id_check(_z_id_t id) { return memcmp(&id, &empty_id, sizeof(id)) != 0; }
@@ -76,6 +82,7 @@ static inline bool _z_id_eq(const _z_id_t *left, const _z_id_t *right) {
 }
 int _z_id_cmp(const _z_id_t *left, const _z_id_t *right);
 size_t _z_id_hash(const _z_id_t *id);
+_z_id_t _z_id_generate_random(void);
 static inline _z_id_t _z_id_empty(void) { return (_z_id_t){0}; }
 
 _Z_ELEM_DEFINE(_z_id, _z_id_t, _z_id_size, _z_noop_clear, _z_id_copy, _z_noop_move, _z_id_eq, _z_id_cmp, _z_id_hash)
@@ -174,6 +181,7 @@ static inline bool _z_wireexpr_is_local(const _z_wireexpr_t *expr) {
 static inline bool _z_wireexpr_has_suffix(const _z_wireexpr_t *expr) {
     return !_z_string_view_is_empty(&expr->_suffix);
 }
+static inline bool _z_wireexpr_is_optimized(const _z_wireexpr_t *expr) { return expr->_id != Z_RESOURCE_ID_NONE; }
 static inline bool _z_wireexpr_check(const _z_wireexpr_t *expr) {
     return !_z_string_view_is_empty(&expr->_suffix) || expr->_id != Z_RESOURCE_ID_NONE;
 }

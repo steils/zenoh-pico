@@ -37,10 +37,7 @@ void _z_lwip_udp_multicast_close(_z_sys_net_socket_t *sockrecv, _z_sys_net_socke
                                  const _z_sys_net_endpoint_t rep, const _z_sys_net_endpoint_t lep);
 
 size_t _z_lwip_udp_multicast_read(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                  const _z_sys_net_endpoint_t lep, _z_slice_t *addr);
-
-size_t _z_lwip_udp_multicast_read_exact(const _z_sys_net_socket_t sock, uint8_t *ptr, size_t len,
-                                        const _z_sys_net_endpoint_t lep, _z_slice_t *addr);
+                                  const _z_sys_net_endpoint_t lep, _z_link_address_t *addr_out);
 
 size_t _z_lwip_udp_multicast_write(const _z_sys_net_socket_t sock, const uint8_t *ptr, size_t len,
                                    const _z_sys_net_endpoint_t rep);

@@ -20,7 +20,7 @@
 #include "zenoh-pico.h"
 
 #if Z_FEATURE_SUBSCRIPTION == 1 && Z_FEATURE_PUBLICATION == 1 && Z_FEATURE_QUERY == 1 && Z_FEATURE_QUERYABLE == 1 && \
-    Z_FEATURE_MULTI_THREAD == 1 && Z_FEATURE_LOCAL_SUBSCRIBER == 0 && defined Z_FEATURE_UNSTABLE_API
+    Z_FEATURE_MULTI_THREAD == 1
 typedef struct _node_ctx {
     z_owned_config_t config;
     const char *keyexpr_out;
@@ -87,7 +87,12 @@ void *node_task(void *ptr) {
     printf("Declaring Subscriber on '%s'...\n", keyexpr_in);
     z_owned_closure_sample_t sub_cb;
     z_closure(&sub_cb, pub_handler, NULL, ctx);
-    if (z_declare_background_subscriber(z_loan(s), z_loan(sub_qybl_ke), z_move(sub_cb), NULL) != Z_OK) {
+    z_subscriber_options_t sub_opts;
+    z_subscriber_options_default(&sub_opts);
+#if Z_FEATURE_LOCAL_SUBSCRIBER == 1
+    sub_opts.allowed_origin = Z_LOCALITY_REMOTE;
+#endif
+    if (z_declare_background_subscriber(z_loan(s), z_loan(sub_qybl_ke), z_move(sub_cb), &sub_opts) != Z_OK) {
         printf("Unable to declare subscriber.\n");
         return NULL;
     }
@@ -95,7 +100,12 @@ void *node_task(void *ptr) {
     printf("Creating Queryable on '%s'...\n", keyexpr_in);
     z_owned_closure_query_t qybl_cb;
     z_closure(&qybl_cb, query_handler, NULL, ctx);
-    if (z_declare_background_queryable(z_loan(s), z_loan(sub_qybl_ke), z_move(qybl_cb), NULL) != Z_OK) {
+    z_queryable_options_t qybl_opts;
+    z_queryable_options_default(&qybl_opts);
+#if Z_FEATURE_LOCAL_QUERYABLE == 1
+    qybl_opts.allowed_origin = Z_LOCALITY_REMOTE;
+#endif
+    if (z_declare_background_queryable(z_loan(s), z_loan(sub_qybl_ke), z_move(qybl_cb), &qybl_opts) != Z_OK) {
         printf("Unable to create queryable.\n");
         return NULL;
     }
@@ -232,9 +242,7 @@ int main(int argc, char **argv) {
     (void)argv;
     printf(
         "Missing config token to build this test. This test requires: Z_FEATURE_SUBSCRIPTION, Z_FEATURE_PUBLICATION, "
-        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD and "
-        "Z_FEATURE_UNSTABLE_API (until querier becomes stable)\n");
-    printf("It also requires Z_FEATURE_LOCAL_SUBSCRIBER to be deactivated\n");
+        "Z_FEATURE_QUERY, Z_FEATURE_QUERYABLE, Z_FEATURE_MULTI_THREAD\n");
     return 0;
 }
 

@@ -17,12 +17,12 @@
 #include <stdlib.h>
 
 #include "zenoh-pico/config.h"
-#include "zenoh-pico/link/manager.h"
+#include "zenoh-pico/link/endpoint.h"
 #include "zenoh-pico/link/transport/tcp.h"
 
 #if Z_FEATURE_LINK_TCP == 1
 
-z_result_t _z_endpoint_tcp_valid(_z_endpoint_t *endpoint) {
+z_result_t _z_endpoint_tcp_valid(const _z_endpoint_t *endpoint) {
     _z_string_t tcp_str = _z_string_alias_str(TCP_SCHEMA);
     if (!_z_string_equals(&endpoint->_locator._protocol, &tcp_str)) {
         _Z_ERROR_LOG(_Z_ERR_CONFIG_LOCATOR_INVALID);
@@ -36,111 +36,72 @@ z_result_t _z_endpoint_tcp_valid(_z_endpoint_t *endpoint) {
     return ret;
 }
 
-z_result_t _z_f_link_open_tcp(_z_link_t *zl) {
-    uint32_t tout = Z_CONFIG_SOCKET_TIMEOUT;
-    char *tout_as_str = _z_str_intmap_get(&zl->_endpoint._config, TCP_CONFIG_TOUT_KEY);
-    if (tout_as_str != NULL) {
-        tout = (uint32_t)strtoul(tout_as_str, NULL, 10);
-    }
-
-    return _z_tcp_open(&zl->_socket._tcp._sock, zl->_socket._tcp._rep, tout);
+bool _z_unicast_link_tcp_read(_z_unicast_link_tcp_t *tcp, uint8_t *ptr, size_t *len) {
+    *len = _z_tcp_read(tcp->_sock, ptr, *len);
+    return *len != SIZE_MAX;
 }
 
-z_result_t _z_f_link_listen_tcp(_z_link_t *zl) { return _z_tcp_listen(&zl->_socket._tcp._sock, zl->_socket._tcp._rep); }
-
-void _z_f_link_close_tcp(_z_link_t *zl) { _z_tcp_close(&zl->_socket._tcp._sock); }
-
-void _z_f_link_free_tcp(_z_link_t *zl) { _z_tcp_endpoint_clear(&zl->_socket._tcp._rep); }
-
-size_t _z_f_link_write_tcp(const _z_link_t *zl, const uint8_t *ptr, size_t len, _z_sys_net_socket_t *socket) {
-    if (socket != NULL) {
-        return _z_tcp_write(*socket, ptr, len);
-    } else {
-        return _z_tcp_write(zl->_socket._tcp._sock, ptr, len);
-    }
+bool _z_unicast_link_tcp_write(_z_unicast_link_tcp_t *tcp, const uint8_t *ptr, size_t *len) {
+    *len = _z_tcp_write(tcp->_sock, ptr, *len);
+    return *len != SIZE_MAX;
 }
 
-size_t _z_f_link_write_all_tcp(const _z_link_t *zl, const uint8_t *ptr, size_t len) {
-    return _z_tcp_write(zl->_socket._tcp._sock, ptr, len);
-}
-
-size_t _z_f_link_read_tcp(const _z_link_t *zl, uint8_t *ptr, size_t len, _z_slice_t *addr) {
-    _ZP_UNUSED(addr);
-    return _z_tcp_read(zl->_socket._tcp._sock, ptr, len);
-}
-
-size_t _z_f_link_read_exact_tcp(const _z_link_t *zl, uint8_t *ptr, size_t len, _z_slice_t *addr,
-                                _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(addr);
-    if (socket != NULL) {
-        return _z_tcp_read_exact(*socket, ptr, len);
-    } else {
-        return _z_tcp_read_exact(zl->_socket._tcp._sock, ptr, len);
-    }
-}
-
-size_t _z_f_link_tcp_read_socket(const _z_sys_net_socket_t socket, uint8_t *ptr, size_t len) {
-    return _z_tcp_read(socket, ptr, len);
-}
-
-uint16_t _z_get_link_mtu_tcp(void) {
-    // Maximum MTU for TCP
-    return 65535;
-}
-
-z_result_t _z_new_peer_tcp(_z_endpoint_t *endpoint, _z_sys_net_socket_t *socket) {
-    _z_sys_net_endpoint_t sys_endpoint = {0};
-    z_result_t ret = _z_tcp_endpoint_init_from_address(&sys_endpoint, &endpoint->_locator._address);
-
-    if (ret != _Z_RES_OK) {
-        _z_tcp_endpoint_clear(&sys_endpoint);
-        return ret;
-    }
-
-    ret = _z_tcp_open(socket, sys_endpoint, Z_CONFIG_SOCKET_TIMEOUT);
-    _z_tcp_endpoint_clear(&sys_endpoint);
+z_result_t _z_unicast_listener_tcp_create(_z_unicast_listener_tcp_t *listener, const _z_endpoint_t *endpoint) {
+    memset(listener, 0, sizeof(_z_unicast_listener_tcp_t));
+    _z_sys_net_endpoint_t ep;
+    _Z_RETURN_IF_ERR(_z_tcp_endpoint_init_from_address(&ep, &endpoint->_locator._address));
+    z_result_t ret = _z_tcp_listen(&listener->_sock, ep);
+    _z_tcp_endpoint_clear(&ep);
     return ret;
 }
 
-z_result_t _z_new_link_tcp(_z_link_t *zl, _z_endpoint_t *endpoint) {
-    zl->_type = _Z_LINK_TYPE_TCP;
-    zl->_cap._transport = Z_LINK_CAP_TRANSPORT_UNICAST;
-    zl->_cap._flow = Z_LINK_CAP_FLOW_STREAM;
-    zl->_cap._is_reliable = true;
-
-    zl->_mtu = _z_get_link_mtu_tcp();
-
-    zl->_endpoint = *endpoint;
-    z_result_t ret = _z_tcp_endpoint_init_from_address(&zl->_socket._tcp._rep, &endpoint->_locator._address);
-
-    zl->_open_f = _z_f_link_open_tcp;
-    zl->_listen_f = _z_f_link_listen_tcp;
-    zl->_close_f = _z_f_link_close_tcp;
-    zl->_free_f = _z_f_link_free_tcp;
-
-    zl->_write_f = _z_f_link_write_tcp;
-    zl->_write_all_f = _z_f_link_write_all_tcp;
-    zl->_read_f = _z_f_link_read_tcp;
-    zl->_read_exact_f = _z_f_link_read_exact_tcp;
-    zl->_read_socket_f = _z_f_link_tcp_read_socket;
-
+z_result_t _z_unicast_listener_tcp_accept(_z_unicast_listener_tcp_t *listener, _z_unicast_link_tcp_t *link) {
+    memset(link, 0, sizeof(_z_unicast_link_tcp_t));
+    _z_socket_set_blocking(&listener->_sock, false);
+    z_result_t ret = _z_tcp_accept(&listener->_sock, &link->_sock);
+    if (ret == _Z_RES_OK) {
+        _z_socket_set_blocking(&link->_sock, true);
+    }
+    _z_socket_set_blocking(&listener->_sock, true);
     return ret;
 }
-#else
-z_result_t _z_endpoint_tcp_valid(_z_endpoint_t *endpoint) {
-    _ZP_UNUSED(endpoint);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+
+z_result_t _z_unicast_link_tcp_create(_z_unicast_link_tcp_t *tcp, const _z_endpoint_t *endpoint) {
+    memset(tcp, 0, sizeof(_z_unicast_link_tcp_t));
+    _z_sys_net_endpoint_t ep;
+    _Z_RETURN_IF_ERR(_z_tcp_endpoint_init_from_address(&ep, &endpoint->_locator._address));
+    z_result_t ret = _z_tcp_open(&tcp->_sock, ep, Z_CONFIG_SOCKET_TIMEOUT);
+    if (ret == _Z_RES_OK) {
+        _z_socket_set_blocking(&tcp->_sock, true);
+    }
+    _z_tcp_endpoint_clear(&ep);
+    return ret;
 }
 
-z_result_t _z_new_peer_tcp(_z_endpoint_t *endpoint, _z_sys_net_socket_t *socket) {
-    _ZP_UNUSED(endpoint);
-    _ZP_UNUSED(socket);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+void _z_unicast_link_tcp_clear(_z_unicast_link_tcp_t *tcp) { _z_tcp_close(&tcp->_sock); }
+
+void _z_unicast_listener_tcp_clear(_z_unicast_listener_tcp_t *listener) { _z_tcp_close(&listener->_sock); }
+
+uint16_t _z_unicast_link_tcp_get_mtu(const _z_unicast_link_tcp_t *tcp) {
+    _ZP_UNUSED(tcp);
+    return 65535;  // Maximum MTU for TCP
 }
 
-z_result_t _z_new_link_tcp(_z_link_t *zl, _z_endpoint_t *endpoint) {
-    _ZP_UNUSED(zl);
-    _ZP_UNUSED(endpoint);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
+bool _z_unicast_link_tcp_is_reliable(const _z_unicast_link_tcp_t *tcp) {
+    _ZP_UNUSED(tcp);
+    return true;
 }
+
+bool _z_unicast_link_tcp_is_streamed(const _z_unicast_link_tcp_t *tcp) {
+    _ZP_UNUSED(tcp);
+    return true;
+}
+
+z_result_t _z_unicast_link_tcp_get_endpoints(const _z_unicast_link_tcp_t *tcp, char *local, size_t local_len,
+                                             char *remote, size_t remote_len) {
+    return _z_socket_get_endpoints(&tcp->_sock, local, local_len, remote, remote_len);
+}
+
+_z_sys_net_socket_t *_z_unicast_link_tcp_get_sock(_z_unicast_link_tcp_t *tcp) { return &tcp->_sock; }
+
 #endif

@@ -15,6 +15,7 @@
 #include <FreeRTOS.h>
 #include <hw/driver/delay.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "zenoh-pico/config.h"
 #include "zenoh-pico/system/platform.h"
@@ -46,11 +47,6 @@ void *z_malloc(size_t size) {
     // return pvPortMalloc(size); // FIXME: Further investigation is required to understand
     //        why pvPortMalloc or pvPortMallocAligned are failing
     return malloc(size);
-}
-
-void *z_realloc(void *ptr, size_t size) {
-    // Not implemented by the platform
-    return NULL;
 }
 
 void z_free(void *ptr) {
@@ -151,6 +147,22 @@ z_clock_t z_clock_now(void) {
     z_clock_t now;
     __z_clock_gettime(&now);
     return now;
+}
+
+int zp_clock_compare(const z_clock_t *l, const z_clock_t *r) {
+    if (l->tv_sec < r->tv_sec) {
+        return -1;
+    } else if (l->tv_sec > r->tv_sec) {
+        return 1;
+    } else {
+        if (l->tv_nsec < r->tv_nsec) {
+            return -1;
+        } else if (l->tv_nsec > r->tv_nsec) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
 }
 
 unsigned long zp_clock_elapsed_us_since(z_clock_t *instant, z_clock_t *epoch) {

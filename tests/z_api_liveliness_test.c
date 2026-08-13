@@ -70,8 +70,8 @@ void on_receive(z_loaned_sample_t* s, void* context) {
     }
 }
 
-void test_liveliness_sub(bool multicast, bool history) {
-    printf("test_liveliness_sub: multicast=%d, history=%d\n", multicast, history);
+void test_liveliness_sub(bool history) {
+    printf("test_liveliness_sub: history=%d\n", history);
     const char* expr = "zenoh-pico/liveliness/test/*";
 
     z_owned_session_t s1, s2;
@@ -82,14 +82,6 @@ void test_liveliness_sub(bool multicast, bool history) {
     z_view_keyexpr_from_str(&k, expr);
     z_view_keyexpr_from_str(&k1, token1_expr);
     z_view_keyexpr_from_str(&k2, token2_expr);
-
-    if (multicast) {
-        zp_config_insert(z_loan_mut(c1), Z_CONFIG_MODE_KEY, "peer");
-        zp_config_insert(z_loan_mut(c1), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
-
-        zp_config_insert(z_loan_mut(c2), Z_CONFIG_MODE_KEY, "client");
-        zp_config_insert(z_loan_mut(c2), Z_CONFIG_LISTEN_KEY, "udp/224.0.0.224:7447#iface=lo");
-    }
 
     assert_ok(z_open(&s1, z_config_move(&c1), NULL));
     assert_ok(z_open(&s2, z_config_move(&c2), NULL));
@@ -196,12 +188,8 @@ void test_liveliness_get(void) {
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-#if defined(ZENOH_LINUX)
-    test_liveliness_sub(true, false);
-    test_liveliness_sub(true, true);
-#endif
-    test_liveliness_sub(false, false);
-    test_liveliness_sub(false, true);
+    test_liveliness_sub(false);
+    test_liveliness_sub(true);
     test_liveliness_get();
 }
 

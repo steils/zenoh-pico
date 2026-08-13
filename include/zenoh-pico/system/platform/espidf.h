@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+#define _ZP_PLATFORM_HAS_REALLOC
+
 #if Z_FEATURE_MULTI_THREAD == 1
 #include <pthread.h>
 

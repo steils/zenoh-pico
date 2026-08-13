@@ -119,9 +119,11 @@
 #endif
 
 #ifndef _ZP_HASHMAP_TEMPLATE_KEY_DESTROY_FN
+#define _ZP_HASHMAP_TEMPLATE_KEY_TRIVIALLY_DESTRUCTIBLE
 #define _ZP_HASHMAP_TEMPLATE_KEY_DESTROY_FN(x) (void)(x)
 #endif
 #ifndef _ZP_HASHMAP_TEMPLATE_VAL_DESTROY_FN
+#define _ZP_HASHMAP_TEMPLATE_VAL_TRIVIALLY_DESTRUCTIBLE
 #define _ZP_HASHMAP_TEMPLATE_VAL_DESTROY_FN(x) (void)(x)
 #endif
 #ifndef _ZP_HASHMAP_TEMPLATE_KEY_MOVE_FN
@@ -237,6 +239,27 @@ typedef struct _ZP_HASHMAP_TEMPLATE_NODE_TYPE {
 typedef _ZP_HASHMAP_TEMPLATE_KEY_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, key_t);
 #ifndef _ZP_HASHMAP_TEMPLATE_IS_SET
 typedef _ZP_HASHMAP_TEMPLATE_VAL_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, val_t);
+#endif
+
+// Input parameter type for insert(). The incoming key/value is passed by const
+// pointer when it is both trivially movable (moved in via a plain copy that
+// leaves the source intact) and trivially destructible (destroying the incoming
+// duplicate is a no-op), so insert() neither mutates nor consumes the source.
+// Otherwise a mutable pointer is required because the move may consume the
+// source. The `const` is applied to the key_t/val_t typedef rather than spelled
+// out on the underlying type, so pointer key/value types keep the correct
+// qualifier level (see the note on const_get).
+#if defined(_ZP_HASHMAP_TEMPLATE_KEY_TRIVIALLY_MOVABLE) && defined(_ZP_HASHMAP_TEMPLATE_KEY_TRIVIALLY_DESTRUCTIBLE)
+#define _ZP_HASHMAP_TEMPLATE_KEY_INPUT_TYPE const _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, key_t)
+#else
+#define _ZP_HASHMAP_TEMPLATE_KEY_INPUT_TYPE _ZP_HASHMAP_TEMPLATE_KEY_TYPE
+#endif
+#ifndef _ZP_HASHMAP_TEMPLATE_IS_SET
+#if defined(_ZP_HASHMAP_TEMPLATE_VAL_TRIVIALLY_MOVABLE) && defined(_ZP_HASHMAP_TEMPLATE_VAL_TRIVIALLY_DESTRUCTIBLE)
+#define _ZP_HASHMAP_TEMPLATE_VAL_INPUT_TYPE const _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, val_t)
+#else
+#define _ZP_HASHMAP_TEMPLATE_VAL_INPUT_TYPE _ZP_HASHMAP_TEMPLATE_VAL_TYPE
+#endif
 #endif
 
 // Public typedef for the index/iterator type so callers can store indices
@@ -594,8 +617,8 @@ static inline const _ZP_HASHMAP_TEMPLATE_NODE_TYPE *_ZP_CAT(_ZP_HASHMAP_TEMPLATE
 // returned iterator.
 static inline _ZP_HASHMAP_TEMPLATE_ITER_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME,
                                                      insert)(_ZP_HASHMAP_TEMPLATE_TYPE *map,
-                                                             _ZP_HASHMAP_TEMPLATE_KEY_TYPE *key,
-                                                             _ZP_HASHMAP_TEMPLATE_VAL_TYPE *val)
+                                                             _ZP_HASHMAP_TEMPLATE_KEY_INPUT_TYPE *key,
+                                                             _ZP_HASHMAP_TEMPLATE_VAL_INPUT_TYPE *val)
 #else
 // ── insert ────────────────────────────────────────────────────────────────────
 // Takes ownership of *key via move.
@@ -608,7 +631,7 @@ static inline _ZP_HASHMAP_TEMPLATE_ITER_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME,
 // already present) or the maximum addressable capacity has been reached.
 static inline _ZP_HASHMAP_TEMPLATE_ITER_TYPE _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME,
                                                      insert)(_ZP_HASHMAP_TEMPLATE_TYPE *map,
-                                                             _ZP_HASHMAP_TEMPLATE_KEY_TYPE *key)
+                                                             _ZP_HASHMAP_TEMPLATE_KEY_INPUT_TYPE *key)
 #endif
 {
 #ifndef _ZP_HASHMAP_TEMPLATE_IS_STATIC
@@ -850,6 +873,14 @@ static inline void _ZP_CAT(_ZP_HASHMAP_TEMPLATE_NAME, destroy)(_ZP_HASHMAP_TEMPL
 #ifdef _ZP_HASHMAP_TEMPLATE_SLOT_TRIVIALLY_MOVABLE
 #undef _ZP_HASHMAP_TEMPLATE_SLOT_TRIVIALLY_MOVABLE
 #endif
+#ifdef _ZP_HASHMAP_TEMPLATE_KEY_TRIVIALLY_DESTRUCTIBLE
+#undef _ZP_HASHMAP_TEMPLATE_KEY_TRIVIALLY_DESTRUCTIBLE
+#endif
+#ifdef _ZP_HASHMAP_TEMPLATE_VAL_TRIVIALLY_DESTRUCTIBLE
+#undef _ZP_HASHMAP_TEMPLATE_VAL_TRIVIALLY_DESTRUCTIBLE
+#endif
+#undef _ZP_HASHMAP_TEMPLATE_KEY_INPUT_TYPE
+#undef _ZP_HASHMAP_TEMPLATE_VAL_INPUT_TYPE
 
 #undef _ZP_HASHMAP_TEMPLATE_KEY_BUCKET_INDEX
 #undef _ZP_HASHMAP_TEMPLATE_IS_SET

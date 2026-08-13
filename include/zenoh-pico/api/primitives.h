@@ -377,7 +377,8 @@ const char *zp_config_get(const z_loaned_config_t *config, uint8_t key);
  * Parameters:
  *   config: Pointer to a :c:type:`z_loaned_config_t` to modify.
  *   key: Integer key of the property to be inserted.
- *   value: Property value to be inserted.
+ *   value: Property cstring to be inserted. The cstring is not copied, so it must outlive the config and the session
+ * created from it.
  *
  * Return:
  *   ``0`` if insertion is successful, ``negative value`` otherwise.
@@ -1661,20 +1662,6 @@ const z_loaned_string_array_t *zp_hello_locators(const z_loaned_hello_t *hello);
  */
 void z_hello_locators(const z_loaned_hello_t *hello, z_owned_string_array_t *locators_out);
 
-/**
- * Constructs a non-owned non-null-terminated string from the kind of zenoh entity.
- *
- * The string has static storage (i.e. valid until the end of the program).
- *
- * Parameters:
- *   whatami: A whatami bitmask of zenoh entity kind.
- *   str_out: An uninitialized memory location where strring will be constructed.
- *
- * Return:
- *   ``0`` in case of success, ``negative value`` otherwise.
- */
-z_result_t z_whatami_to_view_string(z_whatami_t whatami, z_view_string_t *str_out);
-
 /************* Primitives **************/
 
 /**
@@ -1698,6 +1685,20 @@ z_result_t z_scout(z_moved_config_t *config, z_moved_closure_hello_t *callback, 
  */
 void z_scout_options_default(z_scout_options_t *options);
 #endif
+
+/**
+ * Constructs a non-owned non-null-terminated string from the kind of zenoh entity.
+ *
+ * The string has static storage (i.e. valid until the end of the program).
+ *
+ * Parameters:
+ *   whatami: A whatami bitmask of zenoh entity kind.
+ *   str_out: An uninitialized memory location where strring will be constructed.
+ *
+ * Return:
+ *   ``0`` in case of success, ``negative value`` otherwise.
+ */
+z_result_t z_whatami_to_view_string(z_whatami_t whatami, z_view_string_t *str_out);
 
 /**
  * Opens a Zenoh session.
@@ -1798,23 +1799,7 @@ z_result_t z_info_routers_zid(const z_loaned_session_t *zs, z_moved_closure_zid_
  */
 z_id_t z_info_zid(const z_loaned_session_t *zs);
 
-static inline void _z_transport_link_properties_from_transport(const _z_transport_common_t *transport, uint16_t *mtu,
-                                                               bool *is_streamed, bool *is_reliable) {
-    *mtu = 0;
-    *is_streamed = false;
-    *is_reliable = false;
-
-    if (transport != NULL && transport->_link != NULL) {
-        *mtu = transport->_link->_mtu;
-        *is_streamed = transport->_link->_cap._flow == Z_LINK_CAP_FLOW_STREAM;
-        *is_reliable = transport->_link->_cap._is_reliable;
-    }
-}
-
 #if Z_FEATURE_CONNECTIVITY == 1
-void _z_info_transport_from_peer(_z_info_transport_t *out, const _z_transport_peer_common_t *peer, bool is_multicast);
-bool _z_info_transport_filter_match(const _z_info_transport_t *transport, const _z_info_transport_t *filter);
-
 /**
  * Fetches all currently connected transports.
  *
@@ -3135,13 +3120,13 @@ z_entity_global_id_t z_subscriber_id(const z_loaned_subscriber_t *subscriber);
 /**
  * Activate the batching mechanism, any message that would have been sent on the network by a subsequent api call (e.g
  * z_put, z_get) will be instead stored until either: the batch is full, flushed with :c:func:`zp_batch_flush`, batching
- * is stopped with :c:func:`zp_batch_stop`, a message needs to be sent immediately.
+ * is stopped with :c:func:`zp_batch_stop` or a message needs to be sent immediately.
  *
  * Parameters:
  *   zs: Pointer to a :c:type:`z_loaned_session_t` that will start batching messages.
  *
  * Return:
- *   ``0`` if batching started, ``negative value`` otherwise.
+ *   ``0`` if batching started, Z_ALREADY if batching was already active, ``negative value`` otherwise.
  */
 z_result_t zp_batch_start(const z_loaned_session_t *zs);
 

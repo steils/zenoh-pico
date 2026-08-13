@@ -104,6 +104,10 @@
 //   NAME_t  NAME_from_6N(6_TYPE *val)   — only if 6_TYPE defined
 //   NAME_t  NAME_from_7N(7_TYPE *val)   — only if 7_TYPE defined
 //   NAME_t  NAME_from_8N(8_TYPE *val)   — only if 8_TYPE defined
+//       For an alternative that is trivially movable and trivially destructible
+//       (neither a custom XN_MOVE_FN nor a custom XN_DESTROY_FN was supplied),
+//       the value is taken by const pointer (const XN_TYPE *val): it is copied in
+//       and the source is left unchanged.
 //   void    NAME_destroy(NAME_t *v)
 //
 // Move (variant-to-variant)  — omitted when _ZP_VARIANT_TEMPLATE_NO_MOVE_FN is defined:
@@ -223,8 +227,21 @@
 #endif
 
 // ── Optional callbacks with defaults ─────────────────────────────────────────
+//
+// An alternative is "trivially movable and trivially destructible" when the user
+// supplies neither a custom MOVE_FN (defaulting to shallow copy) nor a custom
+// DESTROY_FN (defaulting to no-op).  For such alternatives the NAME_from_XN
+// constructor takes its value by const pointer, since it merely copies the
+// pointed-to value and leaves the source untouched.  This is recorded in
+// _ZP_VARIANT_TEMPLATE_XN_INPUT_QUALIFIER (expands to `const` or nothing) before the
+// defaults below make the FN macros unconditionally defined.
 
 #ifdef _ZP_VARIANT_TEMPLATE_1_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_1_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_1_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_1_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_1_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_1_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_1_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -233,6 +250,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_2_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_2_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_2_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_2_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_2_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_2_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_2_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -241,6 +263,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_3_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_3_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_3_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_3_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_3_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_3_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_3_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -249,6 +276,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_4_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_4_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_4_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_4_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_4_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_4_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_4_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -257,6 +289,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_5_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_5_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_5_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_5_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_5_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_5_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_5_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -265,6 +302,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_6_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_6_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_6_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_6_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_6_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_6_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_6_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -273,6 +315,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_7_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_7_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_7_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_7_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_7_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_7_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_7_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -281,6 +328,11 @@
 #endif
 #endif
 #ifdef _ZP_VARIANT_TEMPLATE_8_TYPE
+#if !defined(_ZP_VARIANT_TEMPLATE_8_DESTROY_FN) && !defined(_ZP_VARIANT_TEMPLATE_8_MOVE_FN)
+#define _ZP_VARIANT_TEMPLATE_8_INPUT_QUALIFIER const
+#else
+#define _ZP_VARIANT_TEMPLATE_8_INPUT_QUALIFIER
+#endif
 #ifndef _ZP_VARIANT_TEMPLATE_8_DESTROY_FN
 #define _ZP_VARIANT_TEMPLATE_8_DESTROY_FN(ptr) (void)(ptr)
 #endif
@@ -533,7 +585,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_CAT(_ZP_VARIANT_TEMPLATE_NAME, none)
 // ── NAME_from_XN ─────────────────────────────────────────────────────────────
 
 #ifdef _ZP_VARIANT_TEMPLATE_1_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_1(_ZP_VARIANT_TEMPLATE_1_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_1(
+    _ZP_VARIANT_TEMPLATE_1_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_1_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_1;
@@ -543,7 +596,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_1(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_2_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_2(_ZP_VARIANT_TEMPLATE_2_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_2(
+    _ZP_VARIANT_TEMPLATE_2_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_2_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_2;
@@ -553,7 +607,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_2(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_3_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_3(_ZP_VARIANT_TEMPLATE_3_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_3(
+    _ZP_VARIANT_TEMPLATE_3_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_3_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_3;
@@ -563,7 +618,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_3(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_4_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_4(_ZP_VARIANT_TEMPLATE_4_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_4(
+    _ZP_VARIANT_TEMPLATE_4_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_4_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_4;
@@ -573,7 +629,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_4(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_5_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_5(_ZP_VARIANT_TEMPLATE_5_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_5(
+    _ZP_VARIANT_TEMPLATE_5_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_5_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_5;
@@ -583,7 +640,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_5(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_6_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_6(_ZP_VARIANT_TEMPLATE_6_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_6(
+    _ZP_VARIANT_TEMPLATE_6_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_6_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_6;
@@ -593,7 +651,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_6(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_7_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_7(_ZP_VARIANT_TEMPLATE_7_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_7(
+    _ZP_VARIANT_TEMPLATE_7_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_7_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_7;
@@ -603,7 +662,8 @@ static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_7(_ZP_VARIANT_TEMPLA
 #endif
 
 #ifdef _ZP_VARIANT_TEMPLATE_8_TYPE
-static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_8(_ZP_VARIANT_TEMPLATE_8_TYPE *val) {
+static inline _ZP_VARIANT_TEMPLATE_TYPE _ZP_VARIANT_FN_FROM_8(
+    _ZP_VARIANT_TEMPLATE_8_INPUT_QUALIFIER _ZP_VARIANT_TEMPLATE_8_TYPE *val) {
     _ZP_VARIANT_TEMPLATE_TYPE v;
     memset(&v, 0, sizeof(v));
     v._tag = _ZP_VARIANT_TAG_8;
@@ -1105,6 +1165,14 @@ static inline bool _ZP_VARIANT_FN_TAKE_8(_ZP_VARIANT_TEMPLATE_TYPE *v, _ZP_VARIA
 #undef _ZP_VARIANT_TEMPLATE_6_MOVE_FN
 #undef _ZP_VARIANT_TEMPLATE_7_MOVE_FN
 #undef _ZP_VARIANT_TEMPLATE_8_MOVE_FN
+#undef _ZP_VARIANT_TEMPLATE_1_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_2_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_3_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_4_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_5_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_6_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_7_INPUT_QUALIFIER
+#undef _ZP_VARIANT_TEMPLATE_8_INPUT_QUALIFIER
 #undef _ZP_VARIANT_TEMPLATE_TYPE
 #undef _ZP_VARIANT_TEMPLATE_TAG_TYPE
 #undef _ZP_VARIANT_ALIAS_NONE

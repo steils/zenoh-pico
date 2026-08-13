@@ -107,24 +107,6 @@ static size_t _z_tcp_mbed_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t le
     return (size_t)rb;
 }
 
-static size_t _z_tcp_mbed_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    size_t n = 0;
-    uint8_t *pos = &ptr[0];
-
-    do {
-        size_t rb = _z_tcp_mbed_read(sock, pos, len - n);
-        if ((rb == SIZE_MAX) || (rb == 0)) {
-            n = rb;
-            break;
-        }
-
-        n = n + rb;
-        pos = _z_ptr_u8_offset(pos, rb);
-    } while (n != len);
-
-    return n;
-}
-
 static size_t _z_tcp_mbed_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     nsapi_size_or_error_t wb = sock._tcp->send(ptr, len);
     if (wb < 0) {
@@ -154,10 +136,6 @@ z_result_t _z_tcp_accept(const _z_sys_net_socket_t *sock_in, _z_sys_net_socket_t
 void _z_tcp_close(_z_sys_net_socket_t *sock) { _z_tcp_mbed_close(sock); }
 
 size_t _z_tcp_read(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) { return _z_tcp_mbed_read(sock, ptr, len); }
-
-size_t _z_tcp_read_exact(_z_sys_net_socket_t sock, uint8_t *ptr, size_t len) {
-    return _z_tcp_mbed_read_exact(sock, ptr, len);
-}
 
 size_t _z_tcp_write(_z_sys_net_socket_t sock, const uint8_t *ptr, size_t len) {
     return _z_tcp_mbed_write(sock, ptr, len);

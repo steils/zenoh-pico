@@ -178,6 +178,13 @@ bool _z_str_se_atoui(const _z_str_se_t *str, uint32_t *result) {
     return true;
 }
 
+bool _z_str_parse_u32(const char *s, uint32_t *out) {
+    _z_str_se_t se;
+    se.start = s;
+    se.end = s + strlen(s);
+    return _z_str_se_atoui(&se, out);
+}
+
 bool _z_str_parse_i32(const char *s, int32_t *out) {
     bool is_negative = false;
     uint32_t value = 0;

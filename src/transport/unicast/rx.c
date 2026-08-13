@@ -12,7 +12,7 @@
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
 
-#include "zenoh-pico/transport/common/rx.h"
+#include "zenoh-pico/transport/rx.h"
 
 #include <stddef.h>
 
@@ -29,304 +29,179 @@
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 
-z_result_t _z_unicast_recv_t_msg(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg) {
-    _Z_DEBUG(">> recv session msg");
-    z_result_t ret = _Z_RES_OK;
-    size_t to_read = 0;
-    _z_transport_peer_unicast_t *peer = _z_transport_peer_unicast_slist_value(ztu->_peers);
-    do {
-        switch (ztu->_common._link->_cap._flow) {
-            // Stream capable links
-            case Z_LINK_CAP_FLOW_STREAM:
-                if (_z_zbuf_readable_len(&ztu->_common._zbuf) < _Z_MSG_LEN_ENC_SIZE) {
-                    _z_link_recv_zbuf(ztu->_common._link, &ztu->_common._zbuf, NULL);
-                    if (_z_zbuf_readable_len(&ztu->_common._zbuf) < _Z_MSG_LEN_ENC_SIZE) {
-                        _z_zbuf_compact(&ztu->_common._zbuf);
-                        _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_ENOUGH_BYTES);
-                        ret = _Z_ERR_TRANSPORT_NOT_ENOUGH_BYTES;
-                        continue;
-                    }
-                }
-                // Get stream size
-                to_read = _z_read_stream_size(&ztu->_common._zbuf);
-                // Read data
-                if (_z_zbuf_readable_len(&ztu->_common._zbuf) < to_read) {
-                    _z_link_recv_zbuf(ztu->_common._link, &ztu->_common._zbuf, NULL);
-                    if (_z_zbuf_readable_len(&ztu->_common._zbuf) < to_read) {
-                        _z_zbuf_set_rpos(&ztu->_common._zbuf,
-                                         _z_zbuf_get_rpos(&ztu->_common._zbuf) - _Z_MSG_LEN_ENC_SIZE);
-                        _z_zbuf_compact(&ztu->_common._zbuf);
-                        _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NOT_ENOUGH_BYTES);
-                        ret = _Z_ERR_TRANSPORT_NOT_ENOUGH_BYTES;
-                        continue;
-                    }
-                }
-                break;
-            // Datagram capable links
-            case Z_LINK_CAP_FLOW_DATAGRAM:
-                _z_zbuf_compact(&ztu->_common._zbuf);
-                to_read = _z_link_recv_zbuf(ztu->_common._link, &ztu->_common._zbuf, NULL);
-                if (to_read == SIZE_MAX) {
-                    _Z_ERROR_LOG(_Z_ERR_TRANSPORT_RX_FAILED);
-                    ret = _Z_ERR_TRANSPORT_RX_FAILED;
-                }
-                break;
-            default:
-                break;
+static z_result_t _z_unicast_transport_manager_handle_transport_message(
+    _z_unicast_transport_manager_t *manager, _z_transport_message_t *t_msg,
+    _z_unicast_transport_peer_hset_iter_t peer_iter) {
+    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_hset_at(&manager->_peers, peer_iter);
+    peer->_received = true;  // mark that we have received a message from this peer
+    switch (_Z_MID(t_msg->_header)) {
+        case _Z_MID_T_FRAME:
+            _Z_DEBUG("Received Z_FRAME message");
+            return _z_transport_handle_frame(manager->_parent, t_msg->_header, &t_msg->_body._frame,
+#if Z_FEATURE_FRAGMENTATION == 1
+                                             &peer->_dbuf, &peer->_sn_rx,
+#endif
+                                             (size_t)peer_iter);
+        case _Z_MID_T_FRAGMENT:
+            _Z_DEBUG("Received Z_FRAGMENT message");
+#if Z_FEATURE_FRAGMENTATION == 1
+            return _z_transport_handle_fragment(manager->_parent, t_msg->_header, &t_msg->_body._fragment, &peer->_dbuf,
+                                                &peer->_sn_rx, peer->_sn_res, peer->_patch, (size_t)peer_iter);
+#else
+            _Z_INFO("Received Z_FRAGMENT message but fragmentation feature is not enabled, dropping the message");
+            return _Z_RES_OK;
+#endif
+        case _Z_MID_T_KEEP_ALIVE:
+            _Z_DEBUG("Received Z_KEEP_ALIVE message");
+            return _Z_RES_OK;
+        case _Z_MID_T_INIT:
+            // Do nothing, zenoh clients are not expected to handle accept messages on established sessions
+            return _Z_RES_OK;  // should we rather return an error here and close the transport ?
+        case _Z_MID_T_OPEN:
+            // Do nothing, zenoh clients are not expected to handle accept messages on established sessions
+            return _Z_RES_OK;  // should we rather return an error here and close the transport ?
+        case _Z_MID_T_CLOSE: {
+            _Z_INFO("Closing session as requested by the remote peer due to reason code %d",
+                    (_z_close_reason_t)t_msg->_body._close._reason);
+            return Z_REMOTE_PEER_SENT_CLOSE;
         }
-    } while (false);  // The 1-iteration loop to use continue to break the entire loop on error
-
-    if (ret == _Z_RES_OK) {
-        _Z_DEBUG(">> \t transport_message_decode");
-
-        // Wrap the main buffer to_read bytes
-        _z_zbuf_t zbuf = _z_zbuf_view(&ztu->_common._zbuf, to_read);
-        ret = _z_transport_message_decode(t_msg, &zbuf);
-
-        if (ret == _Z_RES_OK) {
-            // Mark the session that we have received data
-            peer->common._received = true;
-
-            // Update the actual buffer pointers
-            _z_zbuf_set_rpos(&ztu->_common._zbuf, _z_zbuf_get_rpos(&ztu->_common._zbuf) + _z_zbuf_get_rpos(&zbuf));
-        } else {
-            _Z_ERROR("Malformed transport message: %d", ret);
-            _z_zbuf_set_rpos(&ztu->_common._zbuf, _z_zbuf_get_rpos(&ztu->_common._zbuf) + to_read);
+        default: {
+            _Z_INFO("WARNING: Unknown transport message ID");
+            return _Z_RES_OK;  // should we rather return an error here and close the transport ?
         }
     }
+}
+
+static z_result_t _z_unicast_link_recv_zbuf_stream(_z_unicast_link_t *link, _z_zbuf_t *zbf, uint16_t *msg_len) {
+    size_t readable_len = _z_zbuf_readable_len(zbf);
+    size_t part_len = *msg_len == 0 ? _Z_MSG_LEN_ENC_SIZE : *msg_len;
+    size_t remaining_capacity = _z_zbuf_writable_space_left(zbf) + readable_len;
+    if (remaining_capacity < part_len) {
+        _z_zbuf_compact(zbf);
+        remaining_capacity = _z_zbuf_writable_space_left(zbf) + _z_zbuf_readable_len(zbf);
+        if (remaining_capacity < part_len) {
+            _Z_ERROR_LOG(_Z_ERR_TRANSPORT_NO_SPACE);
+            return _Z_ERR_TRANSPORT_NO_SPACE;
+        }
+    }
+    if (_z_unicast_link_recv_zbuf(link, zbf)) {
+        if (*msg_len == 0) {
+            if (_z_zbuf_readable_len(zbf) < _Z_MSG_LEN_ENC_SIZE) {
+                return Z_NO_DATA;  // Not enough data to read the message length
+            } else {
+                *msg_len =
+                    _z_transport_read_stream_size(zbf);  // this moves the read pointer forward by _Z_MSG_LEN_ENC_SIZE
+            }
+        }
+        return _z_zbuf_readable_len(zbf) >= *msg_len ? _Z_RES_OK : Z_NO_DATA;
+    } else {
+        return Z_NO_DATA;  // with current link implementation there is no way to distinguish between a read error and
+                           // timeout
+    }
+}
+
+static z_result_t _z_unicast_link_recv_zbuf_datagram(_z_unicast_link_t *link, _z_zbuf_t *zbf) {
+    _z_zbuf_reset(zbf);
+    if (_z_unicast_link_recv_zbuf(link, zbf)) {
+        return _z_zbuf_readable_len(zbf) > 0 ? _Z_RES_OK : Z_NO_DATA;
+    } else {
+        return Z_NO_DATA;  // with current link implementation there is no way to distinguish between a read error and
+                           // timeout
+    }
+}
+
+z_result_t _z_unicast_link_recv_t_msg(_z_unicast_link_t *link, _z_transport_message_t *t_msg, _z_zbuf_t *zbf,
+                                      z_clock_t recv_deadline) {
+    z_result_t ret = Z_NO_DATA;
+    uint16_t msg_len = 0;
+    while (ret == Z_NO_DATA) {
+        ret = _z_unicast_link_is_streamed(link) ? _z_unicast_link_recv_zbuf_stream(link, zbf, &msg_len)
+                                                : _z_unicast_link_recv_zbuf_datagram(link, zbf);
+        if (ret == Z_NO_DATA) {
+            z_clock_t now = z_clock_now();
+            if (zp_clock_compare(&now, &recv_deadline) >= 0) {
+                break;
+            }
+        }
+    }
+
+    if (ret == _Z_RES_OK) {
+        ret = _z_transport_message_decode(t_msg, zbf);
+    } else {
+        _Z_ERROR_LOG(ret);
+    }
+
     return ret;
 }
 
-static z_result_t _z_unicast_handle_frame(_z_transport_unicast_t *ztu, uint8_t header, _z_t_msg_frame_t *msg,
-                                          _z_transport_peer_unicast_t *peer) {
-    z_reliability_t tmsg_reliability;
-    // Check if the SN is correct
-    if (_Z_HAS_FLAG(header, _Z_FLAG_T_FRAME_R)) {
-        tmsg_reliability = Z_RELIABILITY_RELIABLE;
-        // @TODO: amend once reliability is in place. For the time being only
-        //        monotonic SNs are ensured
-        if (_z_sn_precedes(ztu->_common._sn_res, peer->_sn_rx_reliable, msg->_sn)) {
-            peer->_sn_rx_reliable = msg->_sn;
-        } else {
-#if Z_FEATURE_FRAGMENTATION == 1
-            _z_wbuf_clear(&peer->common._dbuf_reliable);
-            peer->common._state_reliable = _Z_DBUF_STATE_NULL;
-#endif
-            _Z_INFO("Reliable message dropped because it is out of order");
-            return _Z_RES_OK;
-        }
-    } else {
-        tmsg_reliability = Z_RELIABILITY_BEST_EFFORT;
-        if (_z_sn_precedes(ztu->_common._sn_res, peer->_sn_rx_best_effort, msg->_sn)) {
-            peer->_sn_rx_best_effort = msg->_sn;
-        } else {
-#if Z_FEATURE_FRAGMENTATION == 1
-            _z_wbuf_clear(&peer->common._dbuf_best_effort);
-            peer->common._state_best_effort = _Z_DBUF_STATE_NULL;
-#endif
-            _Z_INFO("Best effort message dropped because it is out of order");
-            return _Z_RES_OK;
-        }
+static z_result_t _z_unicast_transport_peer_recv(_z_unicast_transport_manager_t *manager,
+                                                 _z_unicast_transport_peer_hset_iter_t peer_iter) {
+    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_hset_at(&manager->_peers, peer_iter);
+
+    return _z_unicast_link_is_streamed(&peer->_link)
+               ? _z_unicast_link_recv_zbuf_stream(&peer->_link, &peer->_rx_buffer, &peer->_rx_msg_len)
+               : _z_unicast_link_recv_zbuf_datagram(&peer->_link, &manager->_rx_buffer);
+}
+
+static z_result_t _z_unicast_transport_peer_process_messages(_z_unicast_transport_manager_t *manager,
+                                                             _z_unicast_transport_peer_hset_iter_t peer_iter) {
+    _z_unicast_transport_peer_t *peer = _z_unicast_transport_peer_hset_at(&manager->_peers, peer_iter);
+    bool has_more_messages = true;
+    uint16_t *rx_msg_len_ptr = NULL;
+    _z_zbuf_t *rx_buffer = &manager->_rx_buffer;
+    if (_z_unicast_link_is_streamed(&peer->_link)) {
+        rx_buffer = &peer->_rx_buffer;
+        rx_msg_len_ptr = &peer->_rx_msg_len;
     }
-    // Handle all the zenoh message, one by one
-    // From this point, memory cleaning must be handled by the network message layer
-    _z_network_message_t curr_nmsg = {0};
-    _z_zbuf_t buf = _z_slice_as_zbuf(_z_slice_view_deref(&msg->_payload));
-    while (_z_zbuf_readable_len(&buf) > 0) {
-        _Z_RETURN_IF_ERR(_z_network_message_decode(&curr_nmsg, &buf));
-        curr_nmsg._reliability = tmsg_reliability;
-        _Z_RETURN_IF_ERR(_z_handle_network_message(&ztu->_common, &curr_nmsg, &peer->common));
+    while (has_more_messages) {
+        _z_transport_message_t t_msg = {0};
+        _Z_RETURN_IF_ERR(_z_transport_read_message(rx_buffer, rx_msg_len_ptr, &t_msg, &has_more_messages));
+        _Z_RETURN_IF_ERR(_z_unicast_transport_manager_handle_transport_message(manager, &t_msg, peer_iter));
     }
     return _Z_RES_OK;
 }
 
-static z_result_t _z_unicast_handle_fragment_inner(_z_transport_unicast_t *ztu, uint8_t header,
-                                                   _z_t_msg_fragment_t *msg, _z_transport_peer_unicast_t *peer) {
-    z_result_t ret = _Z_RES_OK;
-#if Z_FEATURE_FRAGMENTATION == 1
-    _z_wbuf_t *dbuf;
-    uint8_t *dbuf_state;
-    z_reliability_t tmsg_reliability;
-    bool consecutive;
-
-    // Select the right defragmentation buffer
-    if (_Z_HAS_FLAG(header, _Z_FLAG_T_FRAGMENT_R)) {
-        tmsg_reliability = Z_RELIABILITY_RELIABLE;
-        // Check SN
-        // @TODO: amend once reliability is in place. For the time being only
-        //        monotonic SNs are ensured
-        if (_z_sn_precedes(ztu->_common._sn_res, peer->_sn_rx_reliable, msg->_sn)) {
-            consecutive = _z_sn_consecutive(ztu->_common._sn_res, peer->_sn_rx_reliable, msg->_sn);
-            peer->_sn_rx_reliable = msg->_sn;
-            dbuf = &peer->common._dbuf_reliable;
-            dbuf_state = &peer->common._state_reliable;
+z_result_t _z_unicast_transport_manager_read(_z_unicast_transport_manager_t *manager,
+                                             const _z_ready_links_mask_bitset_t *ready_links) {
+    bool has_data = false;
+    _z_unicast_transport_peer_hset_iter_t iter = _z_unicast_transport_peer_hset_begin(&manager->_peers);
+    while (iter != _z_unicast_transport_peer_hset_end(&manager->_peers)) {
+        if (!_z_ready_links_mask_bitset_is_unicast_peer_ready(ready_links, (size_t)iter)) {
+            iter = _z_unicast_transport_peer_hset_iter_next(&manager->_peers, iter);
+            continue;
+        }
+        z_result_t ret = _z_unicast_transport_peer_recv(manager, iter);
+        size_t peer_id = (size_t)iter;
+        if (ret == Z_NO_DATA) {
+            iter = _z_unicast_transport_peer_hset_iter_next(&manager->_peers, iter);
+        } else if (ret != _Z_RES_OK) {
+            _Z_ERROR("Failed to receive data from peer %zu (err: %d)", (size_t)iter, ret);
+            _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
+            ret = _z_unicast_transport_manager_close_peer(manager, iter, &reason, &iter);
+            if (ret != _Z_RES_OK) {
+                _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
+            }
         } else {
-            _z_wbuf_clear(&peer->common._dbuf_reliable);
-            peer->common._state_reliable = _Z_DBUF_STATE_NULL;
-            _Z_INFO("Reliable message dropped because it is out of order");
-            return _Z_RES_OK;
-        }
-    } else {
-        tmsg_reliability = Z_RELIABILITY_BEST_EFFORT;
-        // Check SN
-        if (_z_sn_precedes(ztu->_common._sn_res, peer->_sn_rx_best_effort, msg->_sn)) {
-            consecutive = _z_sn_consecutive(ztu->_common._sn_res, peer->_sn_rx_best_effort, msg->_sn);
-            peer->_sn_rx_best_effort = msg->_sn;
-            dbuf = &peer->common._dbuf_best_effort;
-            dbuf_state = &peer->common._state_best_effort;
-        } else {
-            _z_wbuf_clear(&peer->common._dbuf_best_effort);
-            peer->common._state_best_effort = _Z_DBUF_STATE_NULL;
-            _Z_INFO("Best effort message dropped because it is out of order");
-            return _Z_RES_OK;
-        }
-    }
-    // Check consecutive SN
-    if (!consecutive && _z_wbuf_len(dbuf) > 0) {
-        _z_wbuf_clear(dbuf);
-        *dbuf_state = _Z_DBUF_STATE_NULL;
-        _Z_INFO("Defragmentation buffer dropped because non-consecutive fragments received");
-        return _Z_RES_OK;
-    }
-    // Handle fragment markers
-    if (_Z_PATCH_HAS_FRAGMENT_MARKERS(peer->common._patch)) {
-        if (msg->first) {
-            _z_wbuf_reset(dbuf);
-        } else if (_z_wbuf_len(dbuf) == 0) {
-            _Z_INFO("First fragment received without the start marker");
-            return _Z_RES_OK;
-        }
-        if (msg->drop) {
-            _z_wbuf_reset(dbuf);
-            return _Z_RES_OK;
+            has_data = true;
+            ret = _z_unicast_transport_peer_process_messages(manager, iter);
+            if (ret != _Z_RES_OK) {
+                if (ret == Z_REMOTE_PEER_SENT_CLOSE) {
+                    _Z_INFO("Remote peer %zu sent a CLOSE message", peer_id);
+                    ret = _z_unicast_transport_manager_close_peer(manager, iter, NULL, &iter);
+                } else {
+                    _Z_ERROR("Failed to handle transport message from peer %zu (err: %d)", peer_id, ret);
+                    _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
+                    ret = _z_unicast_transport_manager_close_peer(manager, iter, &reason, &iter);
+                }
+                if (ret != _Z_RES_OK) {
+                    _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
+                }
+            } else {
+                iter = _z_unicast_transport_peer_hset_iter_next(&manager->_peers, iter);
+            }
         }
     }
-    // Allocate buffer if needed
-    if (*dbuf_state == _Z_DBUF_STATE_NULL) {
-        if (_z_wbuf_init(dbuf, Z_FRAG_MAX_SIZE, false) != _Z_RES_OK) {
-            _Z_ERROR("Not enough memory to allocate transport defragmentation buffer");
-            _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
-        }
-        *dbuf_state = _Z_DBUF_STATE_INIT;
-    }
-    // Process fragment data
-    if (*dbuf_state == _Z_DBUF_STATE_INIT) {
-        // Check overflow
-        const _z_slice_t *payload_slice = _z_slice_view_deref(&msg->_payload);
-        if ((_z_wbuf_len(dbuf) + payload_slice->len) > Z_FRAG_MAX_SIZE) {
-            *dbuf_state = _Z_DBUF_STATE_OVERFLOW;
-        } else {
-            // Fill buffer
-            _z_wbuf_write_bytes(dbuf, payload_slice->start, 0, payload_slice->len);
-        }
-    }
-    // Process final fragment
-    if (!_Z_HAS_FLAG(header, _Z_FLAG_T_FRAGMENT_M)) {
-        // Drop message if it exceeds the fragmentation size
-        if (*dbuf_state == _Z_DBUF_STATE_OVERFLOW) {
-            _Z_INFO("Fragment dropped because defragmentation buffer has overflown");
-            _z_wbuf_clear(dbuf);
-            *dbuf_state = _Z_DBUF_STATE_NULL;
-            return _Z_RES_OK;
-        }
-        // Convert the defragmentation buffer into a decoding buffer
-        _z_zbuf_t zbf = _z_wbuf_moved_as_zbuf(dbuf);
-        if (_z_zbuf_capacity(&zbf) == 0) {
-            _Z_ERROR("Failed to convert defragmentation buffer into a decoding buffer!");
-            _z_wbuf_clear(dbuf);
-            *dbuf_state = _Z_DBUF_STATE_NULL;
-            _Z_ERROR_RETURN(_Z_ERR_SYSTEM_OUT_OF_MEMORY);
-        }
-        // Decode message
-        _z_zenoh_message_t zm = {0};
-        ret = _z_network_message_decode(&zm, &zbf);
-        zm._reliability = tmsg_reliability;
-        if (ret == _Z_RES_OK) {
-            // Memory clear of the network message data must be handled by the network message layer
-            _z_handle_network_message(&ztu->_common, &zm, &peer->common);
-        } else {
-            _Z_INFO("Failed to decode defragmented message");
-            _Z_ERROR_LOG(_Z_ERR_MESSAGE_DESERIALIZATION_FAILED);
-            ret = _Z_ERR_MESSAGE_DESERIALIZATION_FAILED;
-        }
-        // Free the decoding buffer
-        _z_zbuf_clear(&zbf);
-        *dbuf_state = _Z_DBUF_STATE_NULL;
-    }
-#else
-    _ZP_UNUSED(ztu);
-    _ZP_UNUSED(header);
-    _ZP_UNUSED(msg);
-    _ZP_UNUSED(peer);
-    _Z_INFO("Fragment dropped because fragmentation feature is deactivated");
-#endif
-    return ret;
+    return has_data ? _Z_RES_OK : Z_NO_DATA;
 }
 
-static z_result_t _z_unicast_handle_fragment(_z_transport_unicast_t *ztu, uint8_t header, _z_t_msg_fragment_t *msg,
-                                             _z_transport_peer_unicast_t *peer) {
-    z_result_t ret = _z_unicast_handle_fragment_inner(ztu, header, msg, peer);
-    return ret;
-}
-
-z_result_t _z_unicast_handle_transport_message(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg,
-                                               _z_transport_peer_unicast_t *peer) {
-    z_result_t ret = _Z_RES_OK;
-
-    switch (_Z_MID(t_msg->_header)) {
-        case _Z_MID_T_FRAME:
-            _Z_DEBUG("Received Z_FRAME message");
-            ret = _z_unicast_handle_frame(ztu, t_msg->_header, &t_msg->_body._frame, peer);
-            break;
-
-        case _Z_MID_T_FRAGMENT:
-            _Z_DEBUG("Received Z_FRAGMENT message");
-            ret = _z_unicast_handle_fragment(ztu, t_msg->_header, &t_msg->_body._fragment, peer);
-            break;
-
-        case _Z_MID_T_KEEP_ALIVE: {
-            _Z_DEBUG("Received Z_KEEP_ALIVE message");
-            break;
-        }
-
-        case _Z_MID_T_INIT: {
-            // Do nothing, zenoh clients are not expected to handle accept messages on established sessions
-            break;
-        }
-
-        case _Z_MID_T_OPEN: {
-            // Do nothing, zenoh clients are not expected to handle accept messages on established sessions
-            break;
-        }
-
-        case _Z_MID_T_CLOSE: {
-            _Z_INFO("Closing session as requested by the remote peer");
-            // Peer will be dropped thanks to the error
-            _Z_ERROR_LOG(_Z_ERR_CONNECTION_CLOSED);
-            ret = _Z_ERR_CONNECTION_CLOSED;
-            break;
-        }
-
-        default: {
-            _Z_INFO("WARNING: Unknown transport message ID");
-            break;
-        }
-    }
-    return ret;
-}
-
-#else
-z_result_t _z_unicast_recv_t_msg(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg) {
-    _ZP_UNUSED(ztu);
-    _ZP_UNUSED(t_msg);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
-}
-
-z_result_t _z_unicast_handle_transport_message(_z_transport_unicast_t *ztu, _z_transport_message_t *t_msg,
-                                               _z_transport_peer_unicast_t *peer) {
-    _ZP_UNUSED(ztu);
-    _ZP_UNUSED(t_msg);
-    _ZP_UNUSED(peer);
-    _Z_ERROR_RETURN(_Z_ERR_TRANSPORT_NOT_AVAILABLE);
-}
 #endif  // Z_FEATURE_UNICAST_TRANSPORT == 1
