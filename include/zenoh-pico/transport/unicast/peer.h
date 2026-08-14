@@ -84,7 +84,7 @@ typedef struct _z_unicast_transport_peer_src_dst_address_t {
 void _z_unicast_transport_peer_src_dst_address_get(const _z_unicast_transport_peer_t *peer,
                                                    _z_unicast_transport_peer_src_dst_address_t *address);
 
-void _z_unicast_transport_peer_clear_io(_z_unicast_transport_peer_t *peer);
+void _z_unicast_transport_peer_clear_established(_z_unicast_transport_peer_t *peer);
 void _z_unicast_transport_peer_clear(_z_unicast_transport_peer_t *peer);
 
 #endif /* Z_FEATURE_UNICAST_TRANSPORT == 1 */

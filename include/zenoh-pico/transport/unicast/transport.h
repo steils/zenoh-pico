@@ -55,10 +55,6 @@ static inline _z_link_address_t _z_unicast_peer_key_numeric(uint64_t id) {
 #define _ZP_STATIC_HASHMAP_TEMPLATE_VAL_DESTROY_FN _z_unicast_transport_peer_clear
 #include "zenoh-pico/collections/static_hashmap_template.h"
 
-static inline bool _z_unicast_handshake_state_is_open(_z_unicast_peer_state_t state) {
-    return state == _Z_UNICAST_HS_OPEN_WAIT_INIT_ACK || state == _Z_UNICAST_HS_OPEN_WAIT_OPEN_ACK;
-}
-
 static inline int _z_unicast_transport_peer_lease_cmp(const _z_address_to_unicast_transport_peer_hmap_iter_t *a,
                                                       const _z_address_to_unicast_transport_peer_hmap_iter_t *b,
                                                       const _z_address_to_unicast_transport_peer_hmap_t *ctx) {
@@ -125,8 +121,6 @@ z_result_t _z_unicast_handshake_listen(_z_unicast_transport_peer_t *peer, _z_uni
 
 // Moves *link into the manager on success; ownership remains with the caller on failure
 z_result_t _z_unicast_transport_manager_accept_peer(_z_unicast_transport_manager_t *manager, _z_unicast_link_t *link);
-bool _z_unicast_transport_manager_has_pending_locator(const _z_unicast_transport_manager_t *manager,
-                                                      _z_connect_peer_id_t locator_id);
 size_t _z_unicast_transport_manager_get_pending_count(const _z_unicast_transport_manager_t *manager);
 z_result_t _z_unicast_transport_manager_establish_pending(_z_unicast_transport_manager_t *manager,
                                                           _z_address_to_unicast_transport_peer_hmap_iter_t id);

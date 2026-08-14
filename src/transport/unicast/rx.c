@@ -219,40 +219,40 @@ z_result_t _z_unicast_transport_manager_read(_z_unicast_transport_manager_t *man
     _z_address_to_unicast_transport_peer_hmap_iter_t id =
         _z_address_to_unicast_transport_peer_hmap_begin(&manager->_peers);
     while (id != _z_address_to_unicast_transport_peer_hmap_end(&manager->_peers)) {
-        _z_address_to_unicast_transport_peer_hmap_iter_t next =
-            _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
         if (!_z_ready_links_mask_bitset_is_unicast_peer_ready(ready_links, (size_t)id)) {
-            id = next;
+            id = _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
             continue;
         }
         z_result_t ret = _z_unicast_transport_peer_recv(manager, id);
         size_t peer_id = (size_t)id;
         if (ret == Z_NO_DATA) {
-            id = next;
-            continue;
-        }
-        if (ret == _Z_RES_OK) {
+            id = _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
+        } else if (ret != _Z_RES_OK) {
+            _Z_ERROR("Failed to receive data from peer %zu (err: %d)", peer_id, ret);
+            _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
+            ret = _z_unicast_transport_manager_close_peer(manager, id, &reason, &id);
+            if (ret != _Z_RES_OK) {
+                _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
+            }
+        } else {
             has_data = true;
             ret = _z_unicast_transport_peer_process_messages(manager, id);
+            if (ret != _Z_RES_OK) {
+                if (ret == Z_REMOTE_PEER_SENT_CLOSE) {
+                    _Z_INFO("Remote peer %zu sent a CLOSE message", peer_id);
+                    ret = _z_unicast_transport_manager_close_peer(manager, id, NULL, &id);
+                } else {
+                    _Z_ERROR("Failed to handle transport message from peer %zu (err: %d)", peer_id, ret);
+                    _z_close_reason_t reason = _Z_CLOSE_REASON_GENERIC;
+                    ret = _z_unicast_transport_manager_close_peer(manager, id, &reason, &id);
+                }
+                if (ret != _Z_RES_OK) {
+                    _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
+                }
+            } else {
+                id = _z_address_to_unicast_transport_peer_hmap_iter_next(&manager->_peers, id);
+            }
         }
-        if (ret == _Z_RES_OK) {
-            id = next;
-            continue;
-        }
-
-        const _z_close_reason_t *reason = NULL;
-        _z_close_reason_t generic_reason = _Z_CLOSE_REASON_GENERIC;
-        if (ret == Z_REMOTE_PEER_SENT_CLOSE) {
-            _Z_INFO("Remote peer %zu sent a CLOSE message", peer_id);
-        } else {
-            _Z_ERROR("Failed to receive or handle data from peer %zu (err: %d)", peer_id, ret);
-            reason = &generic_reason;
-        }
-        ret = _z_unicast_transport_manager_close_peer(manager, id, reason, NULL);
-        if (ret != _Z_RES_OK) {
-            _Z_ERROR("Failed to close peer %zu (err: %d)", peer_id, ret);
-        }
-        id = next;
     }
     return has_data ? _Z_RES_OK : Z_NO_DATA;
 }

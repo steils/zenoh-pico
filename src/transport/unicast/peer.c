@@ -19,7 +19,7 @@
 
 #if Z_FEATURE_UNICAST_TRANSPORT == 1
 
-void _z_unicast_transport_peer_clear_io(_z_unicast_transport_peer_t *peer) {
+void _z_unicast_transport_peer_clear_established(_z_unicast_transport_peer_t *peer) {
 #if Z_FEATURE_BATCHING == 1
     _z_wbuf_clear(&peer->_tx_buffer);
 #endif
@@ -30,7 +30,7 @@ void _z_unicast_transport_peer_clear_io(_z_unicast_transport_peer_t *peer) {
 }
 
 void _z_unicast_transport_peer_clear(_z_unicast_transport_peer_t *peer) {
-    _z_unicast_transport_peer_clear_io(peer);
+    _z_unicast_transport_peer_clear_established(peer);
     _z_zbuf_clear(&peer->_rx_buffer);
     _z_unicast_link_clear(&peer->_link);
 }
